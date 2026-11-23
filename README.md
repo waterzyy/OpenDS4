@@ -9,7 +9,7 @@ A small Windows utility that lets you use a DualShock 4 controller as an Xbox 36
 [![CI](https://github.com/waterzyy/OpenDS4/actions/workflows/ci.yml/badge.svg)](https://github.com/waterzyy/OpenDS4/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-4c8bf5)](LICENSE)
 
-[Quick start](#quick-start) · [Features](#features) · [Docs](docs/) · [Contributing](CONTRIBUTING.md)
+[Quick start](#quick-start) · [Screenshots](#screenshots) · [Features](#features) · [Docs](docs/) · [Contributing](CONTRIBUTING.md)
 
 </div>
 
@@ -22,6 +22,20 @@ It talks to the controller over USB or Bluetooth, translates the inputs, and pre
 ## Why I made this
 
 I wanted a simple way to use my DualShock 4 with games that only support Xbox controllers, and I wanted a mapper I could read end to end. So I wrote one. It's small, it does what I need, and I'm sharing it in case it's useful to someone else.
+
+## Screenshots
+
+The **Live Monitor** page shows what the controller is doing right now: sticks, triggers, buttons, the touchpad, and the sensor readout.
+
+![OpenDS4 Live Monitor page](assets/screenshots/live-monitor.png)
+
+The other pages are for settings. **Lightbar RGB** picks the mode, color, and brightness; **Vibration** sets rumble strength and has test buttons for the motors.
+
+| Lightbar RGB | Vibration |
+| --- | --- |
+| ![Lightbar RGB page](assets/screenshots/lightbar.png) | ![Vibration page](assets/screenshots/vibration.png) |
+
+Click any screenshot to see it at full size.
 
 ## Features
 
