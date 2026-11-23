@@ -30,11 +30,11 @@ It ships as source code on purpose. You can see exactly which HID reports are pa
 | **Hardware** | DualShock 4 v1 (`054C:05C4`), v2 (`054C:09CC`), and the official USB Wireless Adapter (`054C:0BA0`), over USB or Bluetooth. Bluetooth extended mode and IEEE CRC-32 packet verification are handled automatically. |
 | **Input** | Radial deadzones, anti-deadzone compensation, Linear / Precision / Fast response curves, Y-axis inversion, stick swap, and per-trigger deadzones. |
 | **Output** | Virtual Xbox 360 controller through Nefarius ViGEmBus, with differential state updates so only changed buttons are re-sent. |
-| **Lightbar** | 12 modes: Static Color, Spectrum Cycle, Cyberpunk, Breathing, Color Pulse, Ember Flame, Aurora Wave, Synthwave, Strobe, Trigger Reactive, Rumble Flash, and Battery Meter. |
+| **Lightbar** | 8 modes: Solid Color, Breathing, Smooth Pulse, Color Cycle, Cool Wave, Warm Glow, Trigger Pressure, and Battery Level. |
 | **Rumble** | XInput force-feedback passthrough, independent heavy/light motor scaling, optional proportional L2/R2 trigger haptics, and built-in motor test patterns. |
 | **Touchpad** | Optional mouse mode: 1-finger glide, 2-finger scroll, tap to click, and physical click-and-drag. Off by default so games are untouched. |
-| **Desktop** | Dark high-DPI interface, live stick radars and trigger bars, sensor readout, event log, and a system tray icon with quick settings. |
-| **Profiles** | Any number of named profiles stored as plain JSON, with four built-in presets to start from. |
+| **Desktop** | Dark high-DPI interface with a DWM dark titlebar, live stick radars and trigger bars, sensor readout, event log, and a dedicated-thread system tray icon with quick settings. |
+| **Profiles** | Any number of named profiles stored as plain JSON, with three built-in presets to start from. |
 | **Privacy** | Zero network access by design, enforced by the test suite. No accounts, no cloud, no telemetry. |
 
 ## Requirements
@@ -60,7 +60,7 @@ It ships as source code on purpose. You can see exactly which HID reports are pa
 
    You can also download the repository as a ZIP from GitHub and extract it anywhere writable.
 
-4. **Run `run_windows.bat`.** The first launch creates a local `.venv` folder and installs `hidapi` and `vgamepad`. Later launches verify both packages in milliseconds and open the app immediately.
+4. **Run `run_windows.bat`.** The first launch creates a local `.venv` folder and installs `hidapi` and `vgamepad`, then runs a built-in `--self-test` preflight. Later launches verify both packages locally in milliseconds and open the app immediately.
 
 5. **Connect the controller.** Mapping starts automatically and keeps retrying until a DualShock 4 appears. The header shows the transport, poll rate, and battery level; use **Stop** to pause and **Start** to resume.
 
@@ -78,11 +78,14 @@ You can also run the app directly with the virtual environment's interpreter:
 .venv\Scripts\python.exe app.py --minimized
 ```
 
+`python app.py` works from a plain command prompt too: at startup the app attaches the local `.venv` site-packages, so you do not have to activate the environment first.
+
 ### What the launcher does
 
 - Finds `py -3` or `python` and checks that it is Python 3.10 or newer.
 - Checks that `tkinter` is importable.
 - Creates `.venv` on first run and installs `requirements.txt` into it.
+- Runs `app.py --self-test` as a preflight and reports a clear error if the Win32 tray structures or icon renderer are broken.
 - Warns if ViGEmBus is not detected in Program Files.
 - Starts the app with `pythonw.exe` (no console window) or `python.exe` as a fallback.
 
@@ -104,7 +107,7 @@ Profiles live in the `profiles/` folder next to `ds4_profile.py`. They are plain
 
 ```json
 {
-  "name": "Shooter Precision",
+  "name": "Shooter",
   "left_deadzone": 0.06,
   "right_deadzone": 0.05,
   "right_curve": "precision",
@@ -113,7 +116,7 @@ Profiles live in the `profiles/` folder next to `ds4_profile.py`. They are plain
 }
 ```
 
-Four presets are included: **Default**, **Shooter Precision**, **Cyberpunk**, and **Racing Haptics**. Copy any JSON file to back it up, or drop a file into `profiles/` to import it. See [docs/profiles.md](docs/profiles.md) for the full settings reference and accepted ranges.
+Three presets are included: **Default**, **Shooter**, and **Racing**. Copy any JSON file to back it up, or drop a file into `profiles/` to import it. See [docs/profiles.md](docs/profiles.md) for the full settings reference and accepted ranges.
 
 > `profiles/` is ignored by Git because it contains personal settings. Nothing in it is required to run the app.
 
@@ -134,7 +137,7 @@ Cursor speed and tap-to-click are configurable per profile. Mouse input is sent 
 
 ## System tray
 
-Minimizing the window (or clicking **Minimize**) sends OpenDS4 to the notification area. The tray icon shows the current lightbar color and offers right-click access to:
+Minimizing the window (or clicking **Minimize**) sends OpenDS4 to the notification area. The tray runs its own Win32 `GetMessageW` thread and talks to the UI through a thread-safe queue, so it never re-enters Tcl/Tk. The icon shows the current lightbar color and offers right-click access to:
 
 - Restore the window
 - Switch the active profile
@@ -163,6 +166,8 @@ Start with [docs/troubleshooting.md](docs/troubleshooting.md). The most common c
 - **Every press registers twice.** Configure HidHide as described above.
 - **Bluetooth reports look truncated.** OpenDS4 reads feature report `0x02` to switch the pad to full 78-byte extended reports and validates every packet with CRC-32.
 - **The window does not open.** Run `run_windows.bat --console` and read the log. Tcl/Tk missing is the usual cause.
+- **The preflight fails.** The launcher runs `app.py --self-test` before the first launch. If it fails, the console shows the reason and the launcher stops instead of opening a broken window.
+- **A fatal error appears.** OpenDS4 writes the full traceback to `opends4_error.log` next to `app.py` and shows a Windows message box with the path.
 
 ## Development
 
@@ -173,7 +178,6 @@ python -m pip install -e ".[dev]"
 
 python -m pytest -v               # unit and safety tests
 python -m ruff check .            # lint
-python -m ruff format --check .   # formatting
 ```
 
 The tests cover USB and Bluetooth packet parsing, CRC-32 validation, deadzone and curve math, output report builders, rumble mixing, profile persistence, tray menu generation, and offline safety across every Python file. They run on Windows in CI, where tkinter is available.
@@ -187,7 +191,7 @@ The tests cover USB and Bluetooth packet parsing, CRC-32 validation, deadzone an
 | `ds4_profile.py` | Profile model, button remapping, rumble mixer, lightbar modes, atomic JSON storage. |
 | `ds4_protocol.py` | HID report parser, CRC-32 validation and signing, stick and trigger math, output report builders. |
 | `ds4_touchpad.py` | Optional touchpad-to-mouse gesture processor using Win32 `SendInput`. |
-| `ds4_tray.py` | Pure-ctypes system tray icon (`Shell_NotifyIconW`), icon renderer, and right-click menu. |
+| `ds4_tray.py` | Dedicated-thread Win32 system tray icon (`Shell_NotifyIconW` + `GetMessageW`), minimalist gamepad icon renderer, and right-click menu. |
 | `tests/test_ds4.py` | Unit and security test suite. |
 | `docs/` | Architecture, profile reference, and troubleshooting. |
 

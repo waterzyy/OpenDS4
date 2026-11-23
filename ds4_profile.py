@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import colorsys
+from dataclasses import asdict, dataclass, field
 import json
 import math
+from pathlib import Path
 import re
 import time
-from dataclasses import asdict, dataclass, field
-from pathlib import Path
 
 from ds4_protocol import (
     DS4InputState,
@@ -81,18 +81,14 @@ CURVE_MODES: dict[str, str] = {
 }
 
 LIGHTBAR_MODES: dict[str, str] = {
-    "static": "Static Color",
-    "rainbow": "Spectrum Cycle",
-    "cyberpunk": "Cyberpunk",
+    "static": "Solid Color",
     "breathing": "Breathing",
-    "color_pulse": "Color Pulse",
-    "fire": "Ember Flame",
-    "ocean": "Aurora Wave",
-    "sunset": "Synthwave",
-    "police": "Strobe",
-    "triggers": "Trigger Reactive",
-    "rumble_reactive": "Rumble Flash",
-    "battery_gauge": "Battery Meter",
+    "color_pulse": "Smooth Pulse",
+    "rainbow": "Color Cycle",
+    "ocean": "Cool Wave",
+    "warm": "Warm Glow",
+    "triggers": "Trigger Pressure",
+    "battery_gauge": "Battery Level",
 }
 
 
@@ -220,112 +216,65 @@ class ControllerProfile:
         base_r = float(self.lightbar_r)
         base_g = float(self.lightbar_g)
         base_b = float(self.lightbar_b)
-        if base_r == 0.0 and base_g == 0.0 and base_b == 0.0 and mode in ("breathing", "rumble_reactive"):
-            base_r, base_g, base_b = 0.0, 100.0, 255.0
+        if base_r == 0.0 and base_g == 0.0 and base_b == 0.0 and mode == "breathing":
+            base_r, base_g, base_b = 0.0, 120.0, 215.0
 
         if mode == "static":
             return base_r, base_g, base_b
 
         if mode == "rainbow":
-            return _hsv_bytes(phase_t * 0.18, 1.0, 1.0)
-
-        if mode == "cyberpunk":
-            palette = (
-                (255, 0, 128),
-                (125, 0, 255),
-                (0, 240, 255),
-                (20, 80, 255),
-            )
-            return _lerp_cyclic_palette(palette, phase_t * 0.16)
+            return _hsv_bytes(phase_t * 0.16, 0.95, 1.0)
 
         if mode == "breathing":
-            wave = 0.5 - 0.5 * math.cos(phase_t * 2.4)
-            env = 0.05 + 0.95 * math.pow(wave, 1.45)
+            wave = 0.5 - 0.5 * math.cos(phase_t * 2.2)
+            env = 0.06 + 0.94 * math.pow(wave, 1.4)
             return base_r * env, base_g * env, base_b * env
 
         if mode == "color_pulse":
-            cycle_pos = phase_t * 0.36
+            cycle_pos = phase_t * 0.32
             cycle_idx = int(cycle_pos)
             frac = cycle_pos - cycle_idx
             hue = (cycle_idx * 0.61803398875) % 1.0
-            amp = math.pow(math.sin(math.pi * frac), 1.5)
-            return _hsv_bytes(hue, 0.95, 0.04 + 0.96 * amp)
-
-        if mode == "fire":
-            flicker = (
-                0.52
-                + 0.24 * math.sin(phase_t * 5.7)
-                + 0.14 * math.sin(phase_t * 12.3 + 1.1)
-                + 0.10 * math.cos(phase_t * 19.7 + 0.4)
-            )
-            heat = max(0.0, min(1.0, flicker))
-            r = 180.0 + 75.0 * math.pow(heat, 0.45)
-            g = 165.0 * math.pow(heat, 1.9)
-            b = 28.0 * math.pow(max(0.0, heat - 0.72) / 0.28, 2.0)
-            return r, g, b
+            amp = math.pow(math.sin(math.pi * frac), 1.45)
+            return _hsv_bytes(hue, 0.90, 0.05 + 0.95 * amp)
 
         if mode == "ocean":
             palette = (
-                (0, 35, 255),
-                (0, 215, 255),
-                (0, 255, 135),
-                (95, 20, 255),
+                (0, 85, 220),
+                (0, 185, 235),
+                (25, 210, 165),
+                (20, 120, 230),
             )
-            return _lerp_cyclic_palette(palette, phase_t * 0.14)
+            return _lerp_cyclic_palette(palette, phase_t * 0.12)
 
-        if mode == "sunset":
+        if mode == "warm":
             palette = (
-                (255, 180, 0),
-                (255, 35, 95),
-                (90, 0, 255),
-                (255, 75, 20),
+                (255, 155, 35),
+                (245, 95, 40),
+                (255, 190, 75),
+                (225, 115, 30),
             )
-            return _lerp_cyclic_palette(palette, phase_t * 0.15)
-
-        if mode == "police":
-            step = int((phase_t * 9.5) % 8.0)
-            if step in (0, 2):
-                return 255.0, 0.0, 0.0
-            if step in (4, 6):
-                return 0.0, 55.0, 255.0
-            return 6.0, 0.0, 12.0
+            return _lerp_cyclic_palette(palette, phase_t * 0.11)
 
         if mode == "triggers":
             trig_intensity = 0.0
             stick_intensity = 0.0
-            face_flash = False
             if ds4 is not None:
                 trig_intensity = max(ds4.l2, ds4.r2) / 255.0
                 sl = math.hypot(ds4.lx - 128.0, ds4.ly - 128.0) / 128.0
                 sr = math.hypot(ds4.rx - 128.0, ds4.ry - 128.0) / 128.0
                 stick_intensity = min(1.0, max(sl, sr))
-                face_flash = ds4.cross or ds4.circle or ds4.square or ds4.triangle
 
-            if face_flash:
-                return 220.0, 245.0, 255.0
-
-            power = min(1.0, max(trig_intensity, stick_intensity * 0.65))
-            hue = (0.55 - 0.58 * power) % 1.0
-            val = 0.45 + 0.55 * power
-            return _hsv_bytes(hue, 1.0, val)
-
-        if mode == "rumble_reactive":
-            motor_lvl = max(0, min(255, max(rumble_large, rumble_small))) / 255.0
-            btn_boost = 0.0
-            if ds4 is not None and (ds4.l2 > 180 or ds4.r2 > 180 or ds4.cross or ds4.r1):
-                btn_boost = 0.35
-            impact = min(1.0, max(motor_lvl, btn_boost))
-            idle = 0.22 + 0.08 * math.sin(phase_t * 2.0)
-            r = base_r * idle * (1.0 - impact) + 255.0 * impact
-            g = base_g * idle * (1.0 - impact) + 105.0 * impact
-            b = base_b * idle * (1.0 - impact) + 20.0 * impact
-            return r, g, b
+            power = min(1.0, max(trig_intensity, stick_intensity * 0.55))
+            hue = (0.54 - 0.52 * power) % 1.0
+            val = 0.40 + 0.60 * power
+            return _hsv_bytes(hue, 0.95, val)
 
         if mode == "battery_gauge":
             pct = max(0, min(100, int(battery_percent))) / 100.0
             hue = 0.35 * pct
-            pulse = (0.55 + 0.45 * (0.5 - 0.5 * math.cos(phase_t * 2.8))) if cable_connected else 1.0
-            return _hsv_bytes(hue, 1.0, pulse)
+            pulse = (0.55 + 0.45 * (0.5 - 0.5 * math.cos(phase_t * 2.6))) if cable_connected else 1.0
+            return _hsv_bytes(hue, 0.95, pulse)
 
         return base_r, base_g, base_b
 
@@ -471,41 +420,34 @@ def builtin_presets() -> list[ControllerProfile]:
             left_deadzone=0.08,
             right_deadzone=0.08,
             lightbar_mode="static",
-            lightbar_r=0,
-            lightbar_g=90,
-            lightbar_b=255,
+            lightbar_r=36,
+            lightbar_g=148,
+            lightbar_b=172,
         ),
         ControllerProfile(
-            name="Shooter Precision",
+            name="Shooter",
             left_deadzone=0.06,
             right_deadzone=0.05,
-            anti_deadzone=0.03,
+            anti_deadzone=0.02,
             right_curve="precision",
             l2_deadzone=0.01,
             r2_deadzone=0.01,
-            lightbar_mode="triggers",
-            trigger_rumble=True,
-            trigger_rumble_scale=0.35,
+            lightbar_mode="static",
+            lightbar_r=0,
+            lightbar_g=120,
+            lightbar_b=215,
             bt_poll_ms=1,
         ),
         ControllerProfile(
-            name="Cyberpunk",
-            left_deadzone=0.07,
-            right_deadzone=0.07,
-            lightbar_mode="cyberpunk",
-            lightbar_speed=1.15,
-            lightbar_brightness=0.90,
-        ),
-        ControllerProfile(
-            name="Racing Haptics",
+            name="Racing",
             left_deadzone=0.05,
             right_deadzone=0.08,
             left_curve="precision",
             l2_deadzone=0.00,
             r2_deadzone=0.00,
-            lightbar_mode="rainbow",
+            lightbar_mode="triggers",
             trigger_rumble=True,
-            trigger_rumble_scale=0.65,
+            trigger_rumble_scale=0.55,
         ),
     ]
 
@@ -523,9 +465,25 @@ class ProfileStore:
         return self.directory / f"{slug[:64]}.json"
 
     def _ensure_defaults(self) -> None:
+        # Clean up retired preset files from older builds if present
+        removed_legacy = False
+        for old_name in ("Cyberpunk.json", "Precision FPS.json"):
+            old_path = self.directory / old_name
+            if old_path.is_file():
+                try:
+                    old_path.unlink(missing_ok=True)
+                    removed_legacy = True
+                except OSError:
+                    pass
+
         if not any(self.directory.glob("*.json")):
             for preset in builtin_presets():
                 self.save(preset)
+        elif removed_legacy:
+            existing = set(self.list_names())
+            for preset in builtin_presets():
+                if preset.name not in existing:
+                    self.save(preset)
 
     def list_names(self) -> list[str]:
         names: list[str] = []

@@ -1,6 +1,6 @@
 # Profile reference
 
-A profile is a JSON file in the `profiles/` directory next to `ds4_profile.py`. The directory is created on first launch and seeded with four presets. Changes made in the UI are saved when you click **Save** on the **Mapping & Profiles** page.
+A profile is a JSON file in the `profiles/` directory next to `ds4_profile.py`. The directory is created on first launch and seeded with three presets. Changes made in the UI are saved when you click **Save** on the **Mapping & Profiles** page.
 
 Values outside the ranges below are clamped when the file is loaded, so a hand-edited profile cannot crash the app.
 
@@ -38,7 +38,7 @@ Triggers are rescaled across the remaining travel after the deadzone, so the ful
 
 | Key | Default | Range | Description |
 | --- | --- | --- | --- |
-| `lightbar_mode` | `static` | one of the 12 modes | Animation or behavior. |
+| `lightbar_mode` | `static` | one of the 8 modes | Animation or behavior. |
 | `lightbar_speed` | `1.00` | `0.20` – `3.00` | Animation speed multiplier. |
 | `lightbar_r` | `0` | `0` – `255` | Static color, red channel. |
 | `lightbar_g` | `90` | `0` – `255` | Static color, green channel. |
@@ -50,18 +50,14 @@ Modes:
 
 | Key | UI label |
 | --- | --- |
-| `static` | Static Color |
-| `rainbow` | Spectrum Cycle |
-| `cyberpunk` | Cyberpunk |
+| `static` | Solid Color |
 | `breathing` | Breathing |
-| `color_pulse` | Color Pulse |
-| `fire` | Ember Flame |
-| `ocean` | Aurora Wave |
-| `sunset` | Synthwave |
-| `police` | Strobe |
-| `triggers` | Trigger Reactive |
-| `rumble_reactive` | Rumble Flash |
-| `battery_gauge` | Battery Meter |
+| `color_pulse` | Smooth Pulse |
+| `rainbow` | Color Cycle |
+| `ocean` | Cool Wave |
+| `warm` | Warm Glow |
+| `triggers` | Trigger Pressure |
+| `battery_gauge` | Battery Level |
 
 ## Vibration
 
@@ -122,11 +118,10 @@ When `touchpad_mouse` is enabled, the physical touchpad click is consumed by the
 
 | Name | Intended for |
 | --- | --- |
-| **Default** | General use, 8% deadzone, static blue lightbar. |
-| **Shooter Precision** | Tight right-stick deadzone, precision curve, trigger haptics, trigger-reactive lightbar. |
-| **Cyberpunk** | Animated lightbar, slightly reduced deadzone. |
-| **Racing Haptics** | Precision left curve, zero trigger deadzone, strong trigger haptics, spectrum lightbar. |
+| **Default** | General use, 8% deadzone, solid teal lightbar. |
+| **Shooter** | Tight right-stick deadzone, precision curve, 1 ms Bluetooth polling. |
+| **Racing** | Precision left curve, zero trigger deadzone, strong trigger haptics, trigger-pressure lightbar. |
 
 ## Sharing and backing up
 
-Profiles are portable: copy the `.json` file to another machine's `profiles/` folder and select it from the profile picker. Delete the `profiles/` folder to restore the four built-in presets on the next launch.
+Profiles are portable: copy the `.json` file to another machine's `profiles/` folder and select it from the profile picker. Delete the `profiles/` folder to restore the three built-in presets on the next launch.

@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 import math
 import struct
 import zlib
-from dataclasses import dataclass, field
 
 SONY_VENDOR_ID = 0x054C
 DS4_PRODUCT_IDS: dict[int, str] = {
@@ -28,8 +28,8 @@ DS4_OUTPUT_REPORT_BT_SIZE = 78
 DS4_FEATURE_REPORT_CALIBRATION = 0x02
 DS4_FEATURE_REPORT_CALIBRATION_SIZE = 37
 
-PS_INPUT_CRC32_SEED = b"\xa1"
-PS_OUTPUT_CRC32_SEED = b"\xa2"
+PS_INPUT_CRC32_SEED = b"\xA1"
+PS_OUTPUT_CRC32_SEED = b"\xA2"
 
 DS4_OUTPUT_HWCTL_CRC32 = 0x40
 DS4_OUTPUT_HWCTL_HID = 0x80

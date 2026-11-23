@@ -38,23 +38,23 @@ pause
 exit /b 1
 
 :check_venv
-if exist ".venv\Scripts\python.exe" goto :check_deps
+if exist "%~dp0.venv\Scripts\python.exe" goto :check_deps
 
 echo.
 echo [OpenDS4] First launch: creating isolated environment in .venv ...
-%PY_CMD% -m venv ".venv"
+%PY_CMD% -m venv "%~dp0.venv"
 if errorlevel 1 goto :venv_failed
 
 :check_deps
-".venv\Scripts\python.exe" -c "import hid, vgamepad" >nul 2>nul
-if not errorlevel 1 goto :launch
+"%~dp0.venv\Scripts\python.exe" -c "import importlib.util as u; raise SystemExit(0 if u.find_spec('hid') and u.find_spec('vgamepad') else 1)" >nul 2>nul
+if not errorlevel 1 goto :preflight
 
 echo.
 echo [OpenDS4] Installing missing Python libraries into .venv (hidapi, vgamepad)...
-".venv\Scripts\python.exe" -m pip install --disable-pip-version-check --no-input -r requirements.txt
+"%~dp0.venv\Scripts\python.exe" -m pip install --disable-pip-version-check --no-input -r "%~dp0requirements.txt"
 if errorlevel 1 goto :pip_failed
 
-".venv\Scripts\python.exe" -c "import hid, vgamepad" >nul 2>nul
+"%~dp0.venv\Scripts\python.exe" -c "import importlib.util as u; raise SystemExit(0 if u.find_spec('hid') and u.find_spec('vgamepad') else 1)" >nul 2>nul
 if errorlevel 1 goto :pip_failed
 
 if not exist "%ProgramFiles%\Nefarius Software Solutions\ViGEm Bus Driver" (
@@ -66,19 +66,24 @@ if not exist "%ProgramFiles%\Nefarius Software Solutions\ViGEm Bus Driver" (
 )
 echo [OpenDS4] Setup complete. Starting application...
 
+:preflight
+"%~dp0.venv\Scripts\python.exe" "%~dp0app.py" --self-test >nul 2>nul
+if errorlevel 1 goto :startup_failed
+
 :launch
 if /i "%~1"=="--console" (
     shift
-    ".venv\Scripts\python.exe" app.py %1 %2 %3 %4 %5
+    "%~dp0.venv\Scripts\python.exe" "%~dp0app.py" %1 %2 %3 %4 %5
+    if errorlevel 1 pause
     exit /b %errorlevel%
 )
 
-if exist ".venv\Scripts\pythonw.exe" (
-    start "" ".venv\Scripts\pythonw.exe" app.py %*
+if exist "%~dp0.venv\Scripts\pythonw.exe" (
+    start "" "%~dp0.venv\Scripts\pythonw.exe" "%~dp0app.py" %*
     exit /b 0
 )
 
-start "" ".venv\Scripts\python.exe" app.py %*
+start "" "%~dp0.venv\Scripts\python.exe" "%~dp0app.py" %*
 exit /b 0
 
 :venv_failed
@@ -92,6 +97,15 @@ exit /b 1
 echo.
 echo [Error] Could not download or install packages from requirements.txt.
 echo Check your internet connection for this one-time setup and try again.
+echo.
+pause
+exit /b 1
+
+:startup_failed
+echo.
+echo [Error] OpenDS4 preflight check failed:
+echo ----------------------------------------
+"%~dp0.venv\Scripts\python.exe" "%~dp0app.py" --self-test
 echo.
 pause
 exit /b 1
