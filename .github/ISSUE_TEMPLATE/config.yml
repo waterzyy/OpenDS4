@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Troubleshooting guide
+    url: https://github.com/waterzyy/OpenDS4/blob/main/docs/troubleshooting.md
+    about: Common fixes for detection, ViGEmBus, Bluetooth, and startup problems.
+  - name: Security report
+    url: https://github.com/waterzyy/OpenDS4/security
+    about: Report a vulnerability privately instead of opening a public issue.

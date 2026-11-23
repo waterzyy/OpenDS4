@@ -1,0 +1,32 @@
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# Python bytecode and tool caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Packaging
+build/
+dist/
+*.egg-info/
+
+# Local user profiles generated at runtime
+profiles/
+
+# Editors and IDEs
+.idea/
+.vscode/
+*.swp
+
+# OS metadata
+Thumbs.db
+Desktop.ini
+.DS_Store
