@@ -222,6 +222,9 @@ def build_tray_menu_tree(snap: TraySnapshot) -> list[TrayMenuItem]:
 if IS_WINDOWS:
     from ctypes import wintypes
 
+    # ctypes.wintypes omits HCURSOR on some Python versions; it is a plain handle.
+    HCURSOR = getattr(wintypes, "HCURSOR", wintypes.HANDLE)
+
     LRESULT = ctypes.c_ssize_t
     WPARAM = ctypes.c_size_t
     LPARAM = ctypes.c_ssize_t
@@ -276,7 +279,7 @@ if IS_WINDOWS:
             ("cbWndExtra", ctypes.c_int),
             ("hInstance", wintypes.HINSTANCE),
             ("hIcon", wintypes.HICON),
-            ("hCursor", wintypes.HCURSOR),
+            ("hCursor", HCURSOR),
             ("hbrBackground", wintypes.HBRUSH),
             ("lpszMenuName", wintypes.LPCWSTR),
             ("lpszClassName", wintypes.LPCWSTR),
