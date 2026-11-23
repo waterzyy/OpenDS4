@@ -1,0 +1,87 @@
+name: Bug report
+description: Report a problem with OpenDS4
+title: "[Bug] "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a problem. Please fill in the details below so it can be reproduced.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Describe the problem and what you expected to happen instead.
+      placeholder: The virtual controller works, but the lightbar never changes color.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Minimal steps from a fresh launch.
+      placeholder: |
+        1. Connect the controller over Bluetooth
+        2. Start the mapper
+        3. Switch to the Spectrum Cycle mode
+    validations:
+      required: true
+
+  - type: dropdown
+    id: connection
+    attributes:
+      label: How is the controller connected?
+      options:
+        - USB
+        - Bluetooth
+        - USB Wireless Adapter
+        - Simulator (no controller)
+        - Not sure
+    validations:
+      required: true
+
+  - type: input
+    id: controller
+    attributes:
+      label: Controller model
+      description: For example, DualShock 4 v2 (CUH-ZCT2U).
+      placeholder: DualShock 4 v2
+    validations:
+      required: true
+
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+      placeholder: Windows 11 24H2
+    validations:
+      required: true
+
+  - type: input
+    id: python
+    attributes:
+      label: Python version
+      placeholder: 3.12.7
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log output
+      description: Output from `run_windows.bat --console`. This is formatted as code, no backticks needed.
+      render: shell
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-flight checks
+      options:
+        - label: ViGEmBus is installed and a virtual Xbox 360 controller appears in `joy.cpl`
+          required: true
+        - label: I searched the existing issues and found no duplicate
+          required: true

@@ -1,0 +1,5 @@
+# Hardware USB/Bluetooth HID access for DualShock 4
+hidapi>=0.14.0
+
+# Virtual Xbox 360 (XInput) client for Nefarius ViGEmBus
+vgamepad>=0.1.0

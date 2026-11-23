@@ -1,0 +1,53 @@
+name: Feature request
+description: Suggest an improvement or a new feature
+title: "[Feature] "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting an improvement. Please keep in mind that OpenDS4 is intentionally offline and auditable, so cloud, account, and telemetry features are out of scope.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve?
+      description: Describe the situation instead of the solution, if you can.
+      placeholder: I keep accidentally clicking when I rest my thumb on the touchpad.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What should happen instead?
+      placeholder: Add a touchpad palm-rejection setting.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Any workarounds or other tools you tried.
+    validations:
+      required: false
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Screenshots, controller model, game names, or anything else that helps.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: This feature can work without network access, `subprocess`, or dynamic code evaluation
+          required: true
+        - label: I searched the existing issues and found no duplicate
+          required: true
