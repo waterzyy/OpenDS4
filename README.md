@@ -17,9 +17,7 @@ A small Windows utility that lets you use a DualShock 4 controller as an Xbox 36
 
 Hi! OpenDS4 is a little tool I made for using a DualShock 4 with games that only expect an Xbox controller.
 
-It talks to the controller over USB or Bluetooth, translates the inputs, and presents a virtual Xbox 360 pad to Windows through [ViGEmBus](https://github.com/nefarius/ViGEmBus). That's it. No installer, no account, no background service, and no network access.
-
-The whole thing is plain Python and ships as source. You can read it in one sitting — that was the point.
+It talks to the controller over USB or Bluetooth, translates the inputs, and presents a virtual Xbox 360 pad to Windows through [ViGEmBus](https://github.com/nefarius/ViGEmBus). And that's it! 
 
 ## Why I made this
 
@@ -118,21 +116,6 @@ This is the **Shooter** preset, trimmed to the lines that differ from **Default*
 ```
 
 Copy a file to back it up, or drop one in to import it. The full list of settings and ranges is in [docs/profiles.md](docs/profiles.md).
-
-## Touchpad mouse
-
-Touchpad mouse is off by default, so the touchpad click still works as the Xbox **Back** button. Turn it on from **Live Monitor**, **Sticks & Touchpad**, or the tray menu.
-
-| Gesture | Action |
-| --- | --- |
-| One finger | Move the cursor |
-| Two fingers, vertical | Scroll |
-| One-finger tap | Left click |
-| Two-finger tap | Right click |
-| Physical press, left side | Hold left button for drag |
-| Physical press, right side | Hold right button for drag |
-
-Cursor speed and tap-to-click are per-profile settings.
 
 ## If something doesn't work
 
