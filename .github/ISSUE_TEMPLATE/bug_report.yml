@@ -1,7 +1,7 @@
 name: Bug report
 description: Report a problem with OpenDS4
 title: "[Bug] "
-labels: ["bug", "needs-triage"]
+labels: ["bug"]
 body:
   - type: markdown
     attributes:
@@ -25,7 +25,7 @@ body:
       placeholder: |
         1. Connect the controller over Bluetooth
         2. Start the mapper
-        3. Switch to the Spectrum Cycle mode
+        3. Switch to the Color Cycle lightbar mode
     validations:
       required: true
 

@@ -5,10 +5,10 @@ Run the app with `run_windows.bat --console` to keep a log visible. Most problem
 ## The controller is not detected
 
 - **Try a different USB cable and port.** Some cables are charge-only and carry no data.
-- **Check the transport.** The status bar should show `USB` or `Bluetooth`. If it stays on `Searching`, OpenDS4 is still enumerating; it retries every 500 ms.
+- **Check the transport.** The status bar should show `USB`, `Bluetooth`, or `Adapter`. If it stays on `Searching...`, OpenDS4 is still enumerating; it retries every 500 ms.
 - **Bluetooth pairing.** Pair the pad from Windows Settings first, then press the PS button. OpenDS4 does not manage pairing.
 - **Wireless Adapter.** Plug the adapter in and let Windows install it. Product ID `0BA0` is supported.
-- **HidHide.** If HidHide is hiding the controller from everything, add the `.venv\Scripts\pythonw.exe` path to its **Applications** list. Use **Copy Python Path** on the Mapping page.
+- **HidHide.** If HidHide is hiding the controller from everything, add the `.venv\Scripts\pythonw.exe` path to its **Applications** list. Use **Copy Python Path** on the **Mapping & Profiles** page.
 
 ## The game sees no controller
 
@@ -16,7 +16,7 @@ Run the app with `run_windows.bat --console` to keep a log visible. Most problem
 2. Restart Windows after installing the driver.
 3. Press **Win+R**, run `joy.cpl`, and check that a **Controller** (Xbox 360) appears while OpenDS4 is running.
 4. Some games need to be started after the virtual controller exists. Launch OpenDS4 first, then the game.
-5. If the virtual controller is missing, check the log for `ViGEmBus missing`. Reinstall the driver and reboot.
+5. If the virtual controller is missing, check the log for a `ViGEmBus` message. Reinstall the driver and reboot.
 
 ## Every press registers twice
 
@@ -37,14 +37,14 @@ The game is reading the physical pad as DirectInput and the virtual pad as XInpu
 
 ## Rumble does not work
 
-- Confirm **Controller Vibration** is enabled in the tray menu and **rumble** is enabled on the Vibration page.
-- Use the **Test Left** and **Test Right** buttons. If the motors spin there, the pad and output path are fine and the game is not sending force feedback.
+- Confirm **Controller Vibration** is enabled in the tray menu and rumble is turned up on the **Vibration** page.
+- Use the **Heavy**, **Light**, and **Both** buttons under **Test Motors**. If the motors spin there, the pad and output path are fine and the game is not sending force feedback.
 - Over Bluetooth, rumble can be weaker. Try USB to compare.
 - Check that the game's own vibration setting is on.
 
 ## Touchpad mouse behaves oddly
 
-- It is disabled by default. Enable it from the Monitor page, the Mapping page, or the tray menu.
+- It is disabled by default. Enable it from **Live Monitor**, **Sticks & Touchpad**, or the tray menu.
 - If taps fire accidentally, turn off **Tap to click**.
 - The touchpad is 1920 x 942. Windows cursor movement is relative, so screen resolution does not matter.
 - Physical presses map to left or right button depending on which side of the pad you press. The split is at roughly 70% of the width.
@@ -69,7 +69,7 @@ The game is reading the physical pad as DirectInput and the virtual pad as XInpu
 
 ## High CPU or stutter
 
-- The UI redraws every 16 ms only while the window is visible. Minimized to the tray it drops to 250 ms.
+- The UI redraws every 16 ms only while the window is visible. Hidden to the tray it drops to every 140 ms.
 - If the event log grows unbounded in a long session, restart the app. The log is in-memory only.
 - Bluetooth with `bt_poll_ms=1` sends more traffic; use `4` unless you need the lowest latency.
 - Check Task Manager for the Python process. A modern machine should sit near 1–3% with one controller connected.
