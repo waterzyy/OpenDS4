@@ -1,8 +1,8 @@
-# Contributing to OpenDS4
+# Contributing
 
-Thanks for taking the time to improve OpenDS4. Bug reports, documentation fixes, and focused pull requests are all welcome.
+Thanks for taking the time to improve OpenDS4. Bug reports, small fixes, and documentation tweaks are all welcome.
 
-## Development setup
+## Setting up
 
 ```bash
 git clone https://github.com/waterzyy/OpenDS4.git
@@ -12,7 +12,7 @@ python -m venv .venv
 python -m pip install -e ".[dev]"
 ```
 
-The app itself targets Windows 10/11 because of ViGEmBus and the Win32 tray integration. The protocol, profile, and math modules are platform-independent and can be exercised on any OS.
+The app itself targets Windows 10/11 because of ViGEmBus and the Win32 tray, and CI runs the tests on Windows. The protocol, profile, and math modules are plain Python and read the same anywhere, but expect the GUI and tray paths to need Tcl/Tk and Windows.
 
 ## Running the tests
 
@@ -20,9 +20,20 @@ The app itself targets Windows 10/11 because of ViGEmBus and the Win32 tray inte
 python -m pytest -v
 ```
 
-The suite runs without hardware and without a display server for everything except the `tkinter` import. On CI it runs on Windows, where Tcl/Tk is available.
+The suite runs without hardware and takes a few seconds.
 
-## Code style
+## A few ground rules
+
+These are enforced by the test suite, so they are worth knowing before you start:
+
+1. **No network access.** Please don't import `socket`, `urllib`, `http`, `requests`, `aiohttp`, `httpx`, `ftplib`, `smtplib`, `telnetlib`, `xmlrpc`, or `webbrowser`.
+2. **No dynamic execution.** Please don't use `eval`, `exec`, `compile`, or `__import__`.
+3. **No subprocesses.** Please don't import or call `subprocess`.
+4. **Keep the HID loop non-blocking.** No blocking `time.sleep` in `ds4_engine.py`; feedback writes belong on the dedicated output thread.
+
+If a change genuinely needs one of these, open an issue and explain the trade-off first.
+
+## Style
 
 - Python 3.10 or newer.
 - [Ruff](https://docs.astral.sh/ruff/) runs a small set of correctness checks:
@@ -31,43 +42,25 @@ The suite runs without hardware and without a display server for everything exce
   python -m ruff check .
   ```
 
-- Keep modules small and auditable. The project intentionally ships as a flat set of readable files rather than a packaged framework.
+- Keep modules small and readable. The project is intentionally a flat set of files rather than a packaged framework.
 - Add type hints to public functions and keep docstrings short and factual.
-- Source files are plain ASCII. The test suite rejects non-English text and emoji in `.py` files so the codebase stays searchable and consistent.
-
-## Project rules
-
-These are not style preferences; the test suite enforces them.
-
-1. **No network access.** Do not import `socket`, `urllib`, `http`, `requests`, `aiohttp`, `httpx`, `ftplib`, `smtplib`, `telnetlib`, `xmlrpc`, or `webbrowser`.
-2. **No dynamic execution.** Do not use `eval`, `exec`, `compile`, or `__import__`.
-3. **No subprocesses.** Do not import or call `subprocess`.
-4. **No silent dependencies.** New third-party packages need a discussion first, because every dependency adds something users have to trust.
-5. **Keep the HID loop non-blocking.** Never call blocking `time.sleep` in `ds4_engine.py`; feedback writes belong on the dedicated output thread.
-
-If a change genuinely needs one of the above, open an issue and explain the trade-off before writing code.
+- Source files are plain ASCII, English only, no emoji. The test suite checks for this.
 
 ## Pull requests
 
 1. Fork the repository and create a topic branch.
 2. Add or update tests for the behavior you are changing.
 3. Run `python -m pytest -v` and `python -m ruff check .` locally.
-4. Fill in the pull request template and describe what changed and why.
-5. Keep the diff focused. Unrelated formatting or refactoring belongs in a separate pull request.
+4. Fill in the pull request template and explain what changed and why.
+5. Keep the diff focused. Unrelated cleanup belongs in a separate pull request.
 
-### Commit messages
-
-Use a short imperative summary, for example `Fix Bluetooth CRC seed for output reports` or `Add per-trigger deadzone UI`. There is no enforced convention beyond that.
+Commit messages can be plain and short, for example `Fix Bluetooth CRC seed for output reports` or `Add per-trigger deadzone UI`.
 
 ## Reporting bugs
 
-Open an issue using the bug report template and include:
+Open an issue using the bug report template. The details that help most are the Windows and Python versions, the controller model, how it's connected (USB, Bluetooth, or Wireless Adapter), the steps to reproduce, and the log output from `run_windows.bat --console` if you have it.
 
-- Windows version and Python version
-- Controller model and how it is connected (USB, Bluetooth, or Wireless Adapter)
-- Whether ViGEmBus is installed and visible in `joy.cpl`
-- Steps to reproduce
-- Log output from `run_windows.bat --console`, if available
+For questions and feature ideas, see [SUPPORT.md](SUPPORT.md).
 
 ## License
 

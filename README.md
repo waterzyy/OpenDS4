@@ -1,221 +1,174 @@
 <div align="center">
 
-<img src="assets/logo.png" alt="OpenDS4 logo" width="128" height="128">
+<img src="assets/logo.png" alt="OpenDS4 logo" width="120" height="120">
 
 # OpenDS4
 
-**DualShock 4 to Xbox 360 controller mapper for Windows.**
-
-Open source, fully offline, and readable from top to bottom.
+A small Windows utility that lets you use a DualShock 4 controller as an Xbox 360 controller.
 
 [![CI](https://github.com/waterzyy/OpenDS4/actions/workflows/ci.yml/badge.svg)](https://github.com/waterzyy/OpenDS4/actions/workflows/ci.yml)
-[![Python](https://img.shields.io/badge/python-3.10%2B-3776ab?logo=python&logoColor=white)](https://www.python.org/downloads/)
-[![Ruff](https://img.shields.io/badge/code%20style-ruff-4c8bf5)](https://docs.astral.sh/ruff/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-4c8bf5)](LICENSE)
 
-[Quick start](#quick-start) · [Features](#features) · [Documentation](docs/) · [Contributing](CONTRIBUTING.md)
+[Quick start](#quick-start) · [Features](#features) · [Docs](docs/) · [Contributing](CONTRIBUTING.md)
 
 </div>
 
 ---
 
-OpenDS4 turns a Sony DualShock 4 into a virtual Xbox 360 controller on Windows. It is built for people who want a controller mapper they can actually read: no binaries, no installers, no accounts, and no network traffic. The whole application is a handful of Python files you can audit in one sitting.
+Hi! OpenDS4 is a little tool I made for using a DualShock 4 with games that only expect an Xbox controller.
 
-It ships as source code on purpose. You can see exactly which HID reports are parsed, how the sticks are scaled, and what gets sent to the virtual controller. An automated test suite verifies that the application contains no network calls, no telemetry, no auto-updater, and no `subprocess` or `eval` usage.
+It talks to the controller over USB or Bluetooth, translates the inputs, and presents a virtual Xbox 360 pad to Windows through [ViGEmBus](https://github.com/nefarius/ViGEmBus). That's it. No installer, no account, no background service, and no network access.
+
+The whole thing is plain Python and ships as source. You can read it in one sitting — that was the point.
+
+## Why I made this
+
+I wanted a simple way to use my DualShock 4 with games that only support Xbox controllers, and I wanted a mapper I could read end to end. So I wrote one. It's small, it does what I need, and I'm sharing it in case it's useful to someone else.
 
 ## Features
 
-| Area | What you get |
-| --- | --- |
-| **Hardware** | DualShock 4 v1 (`054C:05C4`), v2 (`054C:09CC`), and the official USB Wireless Adapter (`054C:0BA0`), over USB or Bluetooth. Bluetooth extended mode and IEEE CRC-32 packet verification are handled automatically. |
-| **Input** | Radial deadzones, anti-deadzone compensation, Linear / Precision / Fast response curves, Y-axis inversion, stick swap, and per-trigger deadzones. |
-| **Output** | Virtual Xbox 360 controller through Nefarius ViGEmBus, with differential state updates so only changed buttons are re-sent. |
-| **Lightbar** | 8 modes: Solid Color, Breathing, Smooth Pulse, Color Cycle, Cool Wave, Warm Glow, Trigger Pressure, and Battery Level. |
-| **Rumble** | XInput force-feedback passthrough, independent heavy/light motor scaling, optional proportional L2/R2 trigger haptics, and built-in motor test patterns. |
-| **Touchpad** | Optional mouse mode: 1-finger glide, 2-finger scroll, tap to click, and physical click-and-drag. Off by default so games are untouched. |
-| **Desktop** | Dark high-DPI interface with a DWM dark titlebar, live stick radars and trigger bars, sensor readout, event log, and a dedicated-thread system tray icon with quick settings. |
-| **Profiles** | Any number of named profiles stored as plain JSON, with three built-in presets to start from. |
-| **Privacy** | Zero network access by design, enforced by the test suite. No accounts, no cloud, no telemetry. |
+- **Works with the hardware you have.** DualShock 4 v1, v2, and the official USB Wireless Adapter, over USB or Bluetooth. Bluetooth extended reports and CRC-32 checks are handled automatically.
+- **Sticks and triggers the way you like them.** Radial deadzones, anti-deadzone, sensitivity, response curves, Y inversion, stick swap, and separate trigger deadzones.
+- **A lightbar you can play with.** Eight modes, from a plain solid color to breathing, color cycles, trigger pressure, and a battery gauge.
+- **Rumble that behaves.** Force feedback passthrough, separate heavy/light scaling, optional trigger haptics, and test buttons for the motors.
+- **Touchpad as a mouse, if you want it.** One-finger glide, two-finger scroll, tap to click, and click-and-drag. Off by default.
+- **Remap every button.** Cross, Circle, Square, Triangle, shoulders, sticks, D-pad, Share, Options, PS, and the touchpad click.
+- **Profiles.** Save as many setups as you like as plain JSON. Three presets are included.
+- **A tray icon.** Minimize to the notification area and switch profiles, lightbar modes, and toggles from the right-click menu.
+- **A simulator.** Test lightbar and rumble settings without a controller connected.
+
+## How it works
+
+The app reads HID reports from the controller, maps them through your profile, and writes the result to a virtual Xbox 360 controller. Feedback goes back the other way: game rumble and lightbar effects are sent to the pad. [docs/architecture.md](docs/architecture.md) has the longer version if you're curious.
 
 ## Requirements
 
-- **Windows 10 or Windows 11** (x64)
-- **Python 3.10 or newer** with Tcl/Tk enabled
-- **[Nefarius ViGEmBus](https://github.com/nefarius/ViGEmBus/releases)** — the virtual Xbox 360 driver
-- A **DualShock 4** controller, connected by USB cable or paired over Bluetooth
-- Optional: **[Nefarius HidHide](https://github.com/nefarius/HidHide/releases)** to hide the physical pad from games that read both DirectInput and XInput
+- Windows 10 or 11
+- Python 3.10 or newer, with Tcl/Tk included
+- [ViGEmBus](https://github.com/nefarius/ViGEmBus/releases) (the virtual controller driver)
+- A DualShock 4, connected by USB or paired over Bluetooth
+- Optional: [HidHide](https://github.com/nefarius/HidHide/releases), if a game reads both the physical and virtual controller
 
 ## Quick start
 
-1. **Install ViGEmBus.** Download and run `ViGEmBus_1.22.0_x64_x86_arm64.exe` from the [official release page](https://github.com/nefarius/ViGEmBus/releases/tag/v1.22.0). This is a one-time system driver install.
+1. **Install ViGEmBus.** Grab the latest `.exe` from the [releases page](https://github.com/nefarius/ViGEmBus/releases) and run it. It's a one-time driver install.
 
-2. **Install Python 3.10+** from [python.org](https://www.python.org/downloads/). Keep **tcl/tk and IDLE** enabled during setup, and enable **Add python.exe to PATH**.
+2. **Install Python 3.10+.** Use the [official installer](https://www.python.org/downloads/). Keep **tcl/tk and IDLE** checked, and tick **Add python.exe to PATH**.
 
-3. **Get the source.**
+3. **Get the code.**
 
    ```bash
    git clone https://github.com/waterzyy/OpenDS4.git
    cd OpenDS4
    ```
 
-   You can also download the repository as a ZIP from GitHub and extract it anywhere writable.
+   Or download the repository as a ZIP and extract it somewhere writable.
 
-4. **Run `run_windows.bat`.** The first launch creates a local `.venv` folder and installs `hidapi` and `vgamepad`, then runs a built-in `--self-test` preflight. Later launches verify both packages locally in milliseconds and open the app immediately.
+4. **Run `run_windows.bat`.** The first run creates a local `.venv`, installs `hidapi` and `vgamepad`, and runs a quick self-test. Later runs start almost instantly.
 
-5. **Connect the controller.** Mapping starts automatically and keeps retrying until a DualShock 4 appears. The header shows the transport, poll rate, and battery level; use **Stop** to pause and **Start** to resume.
+5. **Connect the controller.** Mapping starts on its own and keeps looking for a DualShock 4 until it finds one. Press the PS button if the pad is asleep.
+
+That's the whole install. If something goes wrong, `run_windows.bat --console` keeps a terminal open so you can read the log.
 
 ### Command line
 
 ```text
-run_windows.bat               Launch normally
+run_windows.bat               Start normally
 run_windows.bat --minimized   Start in the system tray
-run_windows.bat --console     Keep a console window open for debugging
+run_windows.bat --console     Keep a console window open
 ```
 
-You can also run the app directly with the virtual environment's interpreter:
+You can also start it directly:
 
 ```powershell
 .venv\Scripts\python.exe app.py --minimized
 ```
 
-`python app.py` works from a plain command prompt too: at startup the app attaches the local `.venv` site-packages, so you do not have to activate the environment first.
+`python app.py` works from a normal command prompt too. The app adds the local `.venv` packages at startup, so you don't need to activate the environment first.
 
-### What the launcher does
+## Using it
 
-- Finds `py -3` or `python` and checks that it is Python 3.10 or newer.
-- Checks that `tkinter` is importable.
-- Creates `.venv` on first run and installs `requirements.txt` into it.
-- Runs `app.py --self-test` as a preflight and reports a clear error if the Win32 tray structures or icon renderer are broken.
-- Warns if ViGEmBus is not detected in Program Files.
-- Starts the app with `pythonw.exe` (no console window) or `python.exe` as a fallback.
+The window has five pages along the left:
 
-## Interface
+- **Live Monitor** — stick radars, trigger bars, button state, touchpad preview, battery, and sensor readout.
+- **Sticks & Touchpad** — deadzones, curves, sensitivity, inversion, stick swap, and the optional touchpad mouse.
+- **Lightbar RGB** — mode, color, speed, brightness, and low-battery warning.
+- **Vibration** — rumble strength, motor balance, trigger haptics, and test buttons.
+- **Mapping & Profiles** — remap buttons, switch profiles, save, delete, and copy the Python path for HidHide.
 
-| Page | Purpose |
-| --- | --- |
-| **Monitor** | Live stick radars, trigger bars, button state, touchpad preview, battery and sensor telemetry. |
-| **Sticks** | Deadzones, anti-deadzone, sensitivity, response curves, Y inversion, and stick swap, with a live curve graph. |
-| **Lightbar** | Mode, color, speed, brightness, and low-battery warning behavior. |
-| **Vibration** | Master strength, heavy/light motor balance, trigger haptics, and test buttons for each motor. |
-| **Mapping & Profiles** | Remap every DS4 button to an Xbox target, switch profiles, save, delete, and copy the Python path for HidHide. |
-
-The header always shows the connection state, transport, poll rate, and battery. **Simulator** animates a virtual controller so you can preview lightbar and rumble settings without hardware, and **Stop** pauses mapping without closing the window.
+The top bar shows the connection, XInput status, battery, and poll rate. **Simulator** animates a fake controller so you can try lightbar and rumble settings without hardware, and **Stop** pauses mapping without closing the window.
 
 ## Profiles
 
-Profiles live in the `profiles/` folder next to `ds4_profile.py`. They are plain UTF-8 JSON and are created automatically on first launch.
+Profiles are plain JSON files. A `profiles/` folder is created next to the app on first run and seeded with three presets: **Default**, **Shooter**, and **Racing**.
+
+This is the **Shooter** preset, trimmed to the lines that differ from **Default** (the real file lists every setting):
 
 ```json
 {
   "name": "Shooter",
   "left_deadzone": 0.06,
   "right_deadzone": 0.05,
+  "anti_deadzone": 0.02,
   "right_curve": "precision",
-  "trigger_rumble": true,
-  "lightbar_mode": "triggers"
+  "l2_deadzone": 0.01,
+  "r2_deadzone": 0.01,
+  "bt_poll_ms": 1
 }
 ```
 
-Three presets are included: **Default**, **Shooter**, and **Racing**. Copy any JSON file to back it up, or drop a file into `profiles/` to import it. See [docs/profiles.md](docs/profiles.md) for the full settings reference and accepted ranges.
-
-> `profiles/` is ignored by Git because it contains personal settings. Nothing in it is required to run the app.
+Copy a file to back it up, or drop one in to import it. The full list of settings and ranges is in [docs/profiles.md](docs/profiles.md).
 
 ## Touchpad mouse
 
-Touchpad mouse is **disabled by default**, so the physical touchpad keeps acting as the Xbox **Back** button. Enable it from the Monitor page, the Mapping page, or the tray menu.
+Touchpad mouse is off by default, so the touchpad click still works as the Xbox **Back** button. Turn it on from **Live Monitor**, **Sticks & Touchpad**, or the tray menu.
 
 | Gesture | Action |
 | --- | --- |
-| 1-finger glide | Move the cursor |
-| 2-finger vertical slide | Scroll |
-| 1-finger tap | Left click |
-| 2-finger tap | Right click |
-| Physical press (left side) | Hold left button for click-and-drag |
-| Physical press (right side) | Hold right button for click-and-drag |
+| One finger | Move the cursor |
+| Two fingers, vertical | Scroll |
+| One-finger tap | Left click |
+| Two-finger tap | Right click |
+| Physical press, left side | Hold left button for drag |
+| Physical press, right side | Hold right button for drag |
 
-Cursor speed and tap-to-click are configurable per profile. Mouse input is sent with Win32 `SendInput`, so no additional packages are needed.
+Cursor speed and tap-to-click are per-profile settings.
 
-## System tray
+## If something doesn't work
 
-Minimizing the window (or clicking **Minimize**) sends OpenDS4 to the notification area. The tray runs its own Win32 `GetMessageW` thread and talks to the UI through a thread-safe queue, so it never re-enters Tcl/Tk. The icon shows the current lightbar color and offers right-click access to:
+- **The game sees no controller.** Make sure ViGEmBus is installed, reboot, and check that an Xbox 360 controller appears in `joy.cpl`.
+- **The controller isn't detected.** Try another cable or USB port, or re-pair Bluetooth. OpenDS4 retries every half second.
+- **Every press registers twice.** The game is reading both the physical and virtual controller. Set up [HidHide](https://github.com/nefarius/HidHide/releases) as described in [docs/troubleshooting.md](docs/troubleshooting.md).
+- **The window doesn't open.** Run `run_windows.bat --console`. Missing Tcl/Tk is the usual reason.
+- **A fatal error appears.** The traceback is written to `opends4_error.log` next to `app.py`.
 
-- Restore the window
-- Switch the active profile
-- Switch the lightbar mode
-- Toggle touchpad mouse, vibration, and trigger haptics
-- Pause or resume the mapper
-- Quit
+More detail is in [docs/troubleshooting.md](docs/troubleshooting.md). If you're stuck, [SUPPORT.md](SUPPORT.md) explains what to include in a bug report.
 
-While minimized, the UI stops redrawing and the process stays idle, so the tray costs almost no CPU.
+## Privacy
 
-## Avoiding double input
-
-Some games and split-screen tools read both raw DirectInput and the virtual XInput device, which makes one press register twice. To prevent it:
-
-1. Install **[Nefarius HidHide](https://github.com/nefarius/HidHide/releases)**.
-2. Open **Mapping & Profiles** in OpenDS4 and click **Copy Python Path**.
-3. In the HidHide Configuration Client, add that `.venv\Scripts\pythonw.exe` (or `python.exe`) path under **Applications**, so OpenDS4 keeps access to the physical pad.
-4. Under **Devices**, check **Sony Wireless Controller** and enable **Enable device hiding**.
-
-## Troubleshooting
-
-Start with [docs/troubleshooting.md](docs/troubleshooting.md). The most common cases:
-
-- **The game sees no controller.** Install ViGEmBus, restart the PC, and check that the virtual Xbox 360 pad appears in `joy.cpl`.
-- **The controller is not detected.** Try another USB cable or port, or re-pair Bluetooth. OpenDS4 auto-detects both transports and retries every 500 ms.
-- **Every press registers twice.** Configure HidHide as described above.
-- **Bluetooth reports look truncated.** OpenDS4 reads feature report `0x02` to switch the pad to full 78-byte extended reports and validates every packet with CRC-32.
-- **The window does not open.** Run `run_windows.bat --console` and read the log. Tcl/Tk missing is the usual cause.
-- **The preflight fails.** The launcher runs `app.py --self-test` before the first launch. If it fails, the console shows the reason and the launcher stops instead of opening a broken window.
-- **A fatal error appears.** OpenDS4 writes the full traceback to `opends4_error.log` next to `app.py` and shows a Windows message box with the path.
-
-## Development
-
-```bash
-python -m venv .venv
-.venv\Scripts\activate            # Windows
-python -m pip install -e ".[dev]"
-
-python -m pytest -v               # unit and safety tests
-python -m ruff check .            # lint
-```
-
-The tests cover USB and Bluetooth packet parsing, CRC-32 validation, deadzone and curve math, output report builders, rumble mixing, profile persistence, tray menu generation, and offline safety across every Python file. They run on Windows in CI, where tkinter is available.
-
-### Project layout
-
-| Path | Description |
-| --- | --- |
-| `app.py` | Dark high-DPI desktop interface built on standard `tkinter`. |
-| `ds4_engine.py` | Non-blocking HID input loop, decoupled output worker, ViGEmBus bridge, 250 Hz simulator. |
-| `ds4_profile.py` | Profile model, button remapping, rumble mixer, lightbar modes, atomic JSON storage. |
-| `ds4_protocol.py` | HID report parser, CRC-32 validation and signing, stick and trigger math, output report builders. |
-| `ds4_touchpad.py` | Optional touchpad-to-mouse gesture processor using Win32 `SendInput`. |
-| `ds4_tray.py` | Dedicated-thread Win32 system tray icon (`Shell_NotifyIconW` + `GetMessageW`), minimalist gamepad icon renderer, and right-click menu. |
-| `tests/test_ds4.py` | Unit and security test suite. |
-| `docs/` | Architecture, profile reference, and troubleshooting. |
-
-See [docs/architecture.md](docs/architecture.md) for the data flow, threading model, and protocol details.
-
-## Security and privacy
-
-OpenDS4 never opens a socket. The test suite parses every Python file with `ast` and fails if it imports networking modules (`socket`, `urllib`, `http`, `requests`, and so on), calls `subprocess`, or uses `eval`, `exec`, `compile`, or `__import__`. There is no updater to disable and nothing to opt out of.
-
-The only outbound connection in the project is the one-time `pip install` performed by `run_windows.bat` on first launch.
+OpenDS4 doesn't use the network. There's no telemetry, account, or auto-updater, and the test suite checks the source for network imports, `subprocess`, and `eval`/`exec` so a future change can't quietly add them. The only download is the first-run `pip install` of `hidapi` and `vgamepad`.
 
 ## Contributing
 
-Bug reports, small fixes, and well-scoped features are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request, and please keep the offline guarantee intact: changes that introduce network access, subprocess execution, or dynamic code evaluation will not be merged.
+Found a bug or have an idea? Open an issue or send a pull request. Small fixes and documentation improvements are welcome too. [CONTRIBUTING.md](CONTRIBUTING.md) has the short version.
+
+If you want to run the tests:
+
+```bash
+python -m pytest -v
+```
 
 ## License
 
-Released under the [MIT License](LICENSE).
+MIT. See [LICENSE](LICENSE).
 
-## Acknowledgements
+## Thanks
 
-- **[ViGEmBus](https://github.com/nefarius/ViGEmBus)** by Nefarius Software Solutions — virtual Xbox 360 controller emulation.
-- **[HidHide](https://github.com/nefarius/HidHide)** by Nefarius Software Solutions — device hiding for clean single-input setups.
-- **[hidapi](https://github.com/libusb/hidapi)** and its Python bindings — cross-platform HID access.
-- **[vgamepad](https://github.com/yannbouteiller/vgamepad)** — XInput virtual gamepad client.
+OpenDS4 builds on a few projects that make this possible:
 
-DualShock is a trademark of Sony Interactive Entertainment. OpenDS4 is an independent project and is not affiliated with, endorsed by, or sponsored by Sony.
+- [ViGEmBus](https://github.com/nefarius/ViGEmBus) by Nefarius — the virtual Xbox 360 driver
+- [HidHide](https://github.com/nefarius/HidHide) by Nefarius — hiding the physical pad from games that double-read it
+- [hidapi](https://github.com/libusb/hidapi) — USB and Bluetooth HID access
+- [vgamepad](https://github.com/yannbouteiller/vgamepad) — the XInput client
+
+DualShock is a trademark of Sony Interactive Entertainment. This is an independent project, not affiliated with Sony.

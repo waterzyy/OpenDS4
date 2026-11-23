@@ -49,7 +49,7 @@ The only module that knows the wire format.
 
 ### `ds4_profile.py`
 
-A `ControllerProfile` dataclass holds every user setting. `map_to_xbox360` applies the button map, swaps sticks if requested, and produces an `Xbox360OutputState`. `compute_motors` mixes game force feedback, trigger haptics, and the built-in test patterns. `effective_lightbar_bytes` evaluates one of the twelve lightbar modes and applies brightness, battery warnings, and rumble flashes.
+A `ControllerProfile` dataclass holds every user setting. `map_to_xbox360` applies the button map, swaps sticks if requested, and produces an `Xbox360OutputState`. `compute_motors` mixes game force feedback, trigger haptics, and the built-in test patterns. `effective_lightbar_bytes` evaluates one of the eight lightbar modes and applies brightness, battery warnings, and rumble flashes.
 
 `ProfileStore` persists profiles as pretty-printed JSON. Writes go to a temporary file and are renamed into place, so a crash cannot leave a half-written profile.
 
@@ -76,7 +76,7 @@ A dedicated-thread implementation of `Shell_NotifyIconW`. The worker runs its ow
 
 ### `app.py`
 
-The `tkinter` interface: a top status bar, five pages, and the shared widgets (`ModernSlider`, `ToggleSwitch`, `SegmentedBar`). The window applies a dark DWM titlebar on Windows, so the title bar matches the dark theme instead of flashing white. The UI polls engine telemetry every 16 ms while visible and every 250 ms while minimized. Widget updates are cached so unchanged values do not trigger Tcl work.
+The `tkinter` interface: a top status bar, five pages, and the shared widgets (`ModernSlider`, `ToggleSwitch`, `SegmentedBar`). The window applies a dark DWM titlebar on Windows, so the title bar matches the dark theme instead of flashing white. The UI polls engine telemetry every 16 ms while a controller is connected (100 ms while searching) and every 140 ms while hidden to the tray. Widget updates are cached so unchanged values do not trigger Tcl work.
 
 At import time `_attach_local_venv()` adds the project's `.venv` site-packages when the app is started with the system interpreter, which makes `python app.py` work from a plain command prompt. `--self-test` runs a headless check of the Win32 structures, icon renderer, and controller classes; the launcher uses it as a preflight. Fatal startup errors are written to `opends4_error.log` and shown in a Windows message box.
 

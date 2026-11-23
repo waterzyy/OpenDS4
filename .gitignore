@@ -21,6 +21,9 @@ dist/
 # Local user profiles generated at runtime
 profiles/
 
+# Startup error log written next to app.py
+*.log
+
 # Editors and IDEs
 .idea/
 .vscode/

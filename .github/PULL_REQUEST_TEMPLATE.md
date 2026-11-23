@@ -10,7 +10,6 @@
 
 - [ ] `python -m pytest -v` passes
 - [ ] `python -m ruff check .` passes
-- [ ] `python -m ruff format --check .` passes
 - [ ] Tested on Windows with a DualShock 4, if the change touches hardware behavior
 
 ## Offline guarantee
