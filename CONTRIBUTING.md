@@ -25,11 +25,10 @@ The suite runs without hardware and without a display server for everything exce
 ## Code style
 
 - Python 3.10 or newer.
-- [Ruff](https://docs.astral.sh/ruff/) enforces linting and formatting:
+- [Ruff](https://docs.astral.sh/ruff/) runs a small set of correctness checks:
 
   ```bash
   python -m ruff check .
-  python -m ruff format --check .
   ```
 
 - Keep modules small and auditable. The project intentionally ships as a flat set of readable files rather than a packaged framework.

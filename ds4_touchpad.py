@@ -3,18 +3,18 @@
 Translates 1-finger glides into smooth relative cursor movement, 2-finger
 vertical slides into mouse wheel scrolling, physical touchpad presses into
 left/right click-and-drag, and optional 1-finger / 2-finger taps into
-left/right clicks. Uses Win32 SendInput via ctypes with zero external
-dependencies.
+left/right clicks. Uses Win32 SendInput via ctypes with explicit fixed-width
+ABI types and zero external dependencies.
 """
 
 from __future__ import annotations
 
 import ctypes
+from dataclasses import dataclass
 import math
 import sys
 import time
-from collections.abc import Callable
-from dataclasses import dataclass
+from typing import Callable
 
 from ds4_protocol import DS4InputState
 
@@ -30,6 +30,11 @@ MOUSEEVENTF_WHEEL = 0x0800
 
 RIGHT_CLICK_ZONE_X = 1360  # Right ~30% of the 1920-wide touchpad
 
+INT32 = ctypes.c_int32
+UINT32 = ctypes.c_uint32
+UINT16 = ctypes.c_uint16
+ULONG_PTR = ctypes.c_size_t
+
 
 @dataclass(frozen=True, slots=True)
 class MouseAction:
@@ -39,58 +44,71 @@ class MouseAction:
     wheel: int = 0
 
 
-if IS_WINDOWS:
-    from ctypes import wintypes
+class MOUSEINPUT(ctypes.Structure):
+    _fields_ = [
+        ("dx", INT32),
+        ("dy", INT32),
+        ("mouseData", UINT32),
+        ("dwFlags", UINT32),
+        ("time", UINT32),
+        ("dwExtraInfo", ULONG_PTR),
+    ]
 
-    ULONG_PTR = ctypes.c_size_t
 
-    class MOUSEINPUT(ctypes.Structure):
-        _fields_ = [
-            ("dx", wintypes.LONG),
-            ("dy", wintypes.LONG),
-            ("mouseData", wintypes.DWORD),
-            ("dwFlags", wintypes.DWORD),
-            ("time", wintypes.DWORD),
-            ("dwExtraInfo", ULONG_PTR),
-        ]
+class KEYBDINPUT(ctypes.Structure):
+    _fields_ = [
+        ("wVk", UINT16),
+        ("wScan", UINT16),
+        ("dwFlags", UINT32),
+        ("time", UINT32),
+        ("dwExtraInfo", ULONG_PTR),
+    ]
 
-    class KEYBDINPUT(ctypes.Structure):
-        _fields_ = [
-            ("wVk", wintypes.WORD),
-            ("wScan", wintypes.WORD),
-            ("dwFlags", wintypes.DWORD),
-            ("time", wintypes.DWORD),
-            ("dwExtraInfo", ULONG_PTR),
-        ]
 
-    class HARDWAREINPUT(ctypes.Structure):
-        _fields_ = [
-            ("uMsg", wintypes.DWORD),
-            ("wParamL", wintypes.WORD),
-            ("wParamH", wintypes.WORD),
-        ]
+class HARDWAREINPUT(ctypes.Structure):
+    _fields_ = [
+        ("uMsg", UINT32),
+        ("wParamL", UINT16),
+        ("wParamH", UINT16),
+    ]
 
-    class _INPUT_UNION(ctypes.Union):
-        _fields_ = [
-            ("mi", MOUSEINPUT),
-            ("ki", KEYBDINPUT),
-            ("hi", HARDWAREINPUT),
-        ]
 
-    class INPUT(ctypes.Structure):
-        _fields_ = [
-            ("type", wintypes.DWORD),
-            ("u", _INPUT_UNION),
-        ]
+class _INPUT_UNION(ctypes.Union):
+    _fields_ = [
+        ("mi", MOUSEINPUT),
+        ("ki", KEYBDINPUT),
+        ("hi", HARDWAREINPUT),
+    ]
 
-    _user32 = ctypes.windll.user32
-    _user32.SendInput.argtypes = [wintypes.UINT, ctypes.POINTER(INPUT), ctypes.c_int]
-    _user32.SendInput.restype = wintypes.UINT
+
+class INPUT(ctypes.Structure):
+    _fields_ = [
+        ("type", UINT32),
+        ("u", _INPUT_UNION),
+    ]
+
+
+_SEND_INPUT_FN = None
+
+
+def _get_send_input():
+    global _SEND_INPUT_FN
+    if not IS_WINDOWS:
+        return None
+    if _SEND_INPUT_FN is None:
+        user32 = ctypes.WinDLL("user32", use_last_error=True)  # type: ignore[attr-defined]
+        user32.SendInput.argtypes = [UINT32, ctypes.POINTER(INPUT), ctypes.c_int]
+        user32.SendInput.restype = UINT32
+        _SEND_INPUT_FN = user32.SendInput
+    return _SEND_INPUT_FN
 
 
 def send_win32_mouse_actions(actions: list[MouseAction]) -> None:
     """Dispatch queued MouseAction items to Windows via a single SendInput call."""
     if not IS_WINDOWS or not actions:
+        return
+    send_fn = _get_send_input()
+    if send_fn is None:
         return
     arr = (INPUT * len(actions))()
     for idx, act in enumerate(actions):
@@ -101,7 +119,7 @@ def send_win32_mouse_actions(actions: list[MouseAction]) -> None:
         arr[idx].u.mi.dwFlags = int(act.flags)
         arr[idx].u.mi.time = 0
         arr[idx].u.mi.dwExtraInfo = 0
-    _user32.SendInput(len(actions), arr, ctypes.sizeof(INPUT))
+    send_fn(len(actions), arr, ctypes.sizeof(INPUT))
 
 
 class TouchpadMouseController:
@@ -191,7 +209,6 @@ class TouchpadMouseController:
         any_now = t1.active or t2.active
         any_prev = self._prev_t1_active or self._prev_t2_active
 
-        # Start of a new touch session
         if any_now and not any_prev:
             self._gesture_start_ts = ts
             self._max_travel_1 = 0.0
@@ -215,7 +232,6 @@ class TouchpadMouseController:
         if ds4.touch_click:
             self._physical_clicked_in_gesture = True
 
-        # Update travel distances for tap classification
         if t1.active:
             if not self._prev_t1_active or t1.tracking_id != self._prev_t1_id:
                 self._start_t1_x, self._start_t1_y = t1.x, t1.y
@@ -252,13 +268,17 @@ class TouchpadMouseController:
                     self._scroll_rem -= wheel_step
                     actions.append(MouseAction(flags=MOUSEEVENTF_WHEEL, wheel=wheel_step))
 
-        # Single-finger cursor glide (also works while holding left-click to drag)
-        elif t1.active and not t2.active and self._prev_t1_active and t1.tracking_id == self._prev_t1_id:
+        # Single-finger cursor glide
+        elif (
+            t1.active
+            and not t2.active
+            and self._prev_t1_active
+            and t1.tracking_id == self._prev_t1_id
+        ):
             raw_dx = t1.x - self._prev_t1_x
             raw_dy = t1.y - self._prev_t1_y
             if abs(raw_dx) < 340 and abs(raw_dy) < 340:
                 speed = math.hypot(raw_dx, raw_dy)
-                # Gentle pointer acceleration: precise at low speed, brisk on wide swipes
                 gain = sens * (0.58 + min(0.85, speed * 0.018))
                 self._rem_x += raw_dx * gain
                 self._rem_y += raw_dy * gain
@@ -285,7 +305,7 @@ class TouchpadMouseController:
                 actions.append(MouseAction(flags=MOUSEEVENTF_RIGHTUP))
             self._held_button = None
 
-        # Tap-to-click when all fingers lift cleanly without a physical press
+        # Tap-to-click when fingers lift cleanly without a physical press
         if tap_to_click and any_prev and not any_now and not self._physical_clicked_in_gesture:
             dt = ts - self._gesture_start_ts
             if self._saw_two_fingers:

@@ -2,14 +2,50 @@
 
 from __future__ import annotations
 
-import contextlib
+from collections.abc import Callable
 import ctypes
+from pathlib import Path
 import queue
+import site
 import sys
 import time
 import tkinter as tk
-from collections.abc import Callable
 from tkinter import colorchooser, messagebox, ttk
+import traceback
+
+
+def _attach_local_venv() -> None:
+    """Allow 'python app.py' from CMD to find packages installed inside local .venv."""
+    if sys.prefix != sys.base_prefix:
+        return
+    venv_dir = Path(__file__).resolve().parent / ".venv"
+    cfg_path = venv_dir / "pyvenv.cfg"
+    if not cfg_path.is_file():
+        return
+    try:
+        expected_ver = f"{sys.version_info.major}.{sys.version_info.minor}."
+        cfg_text = cfg_path.read_text(encoding="utf-8", errors="ignore")
+        version_lines = [
+            ln.split("=", 1)[1].strip()
+            for ln in cfg_text.splitlines()
+            if ln.strip().lower().startswith("version") and "=" in ln
+        ]
+        if version_lines and not any(v.startswith(expected_ver) for v in version_lines):
+            return
+    except OSError:
+        return
+
+    candidates = [
+        venv_dir / "Lib" / "site-packages",
+        venv_dir / "lib" / f"python{sys.version_info.major}.{sys.version_info.minor}" / "site-packages",
+    ]
+    for site_dir in candidates:
+        if site_dir.is_dir():
+            site.addsitedir(str(site_dir))
+            break
+
+
+_attach_local_venv()
 
 from ds4_engine import DS4MapperEngine, EngineTelemetry
 from ds4_profile import (
@@ -22,13 +58,14 @@ from ds4_profile import (
     ProfileStore,
 )
 from ds4_protocol import DS4_TOUCHPAD_HEIGHT, DS4_TOUCHPAD_WIDTH, apply_curve
-from ds4_tray import SystemTrayIcon, TraySnapshot, render_tk_ppm_icon
+from ds4_tray import DEFAULT_ICON_TEAL, SystemTrayIcon, TraySnapshot, create_tk_window_icon
 
 # Palette
 BG_WINDOW = "#111318"
 BG_SIDEBAR = "#151820"
 BG_SURFACE = "#191d26"
 BG_ELEVATED = "#222734"
+BG_HOVER = "#2a3142"
 BG_INPUT = "#14171f"
 BORDER = "#262c3a"
 FG_TEXT = "#eceff4"
@@ -56,14 +93,71 @@ STATIC_SWATCHES: list[tuple[str, int, int, int]] = [
 ]
 
 
+def _blend_hex(hex_a: str, hex_b: str, t: float) -> str:
+    """Linearly interpolate two #RRGGBB colors."""
+    k = max(0.0, min(1.0, float(t)))
+    ra, ga, ba = int(hex_a[1:3], 16), int(hex_a[3:5], 16), int(hex_a[5:7], 16)
+    rb, gb, bb = int(hex_b[1:3], 16), int(hex_b[3:5], 16), int(hex_b[5:7], 16)
+    r = int(round(ra + (rb - ra) * k))
+    g = int(round(ga + (gb - ga) * k))
+    b = int(round(ba + (bb - ba) * k))
+    return f"#{r:02x}{g:02x}{b:02x}"
+
+
 def _enable_windows_dpi_awareness() -> None:
     if sys.platform != "win32":
         return
     try:
-        ctypes.windll.shcore.SetProcessDpiAwareness(1)  # type: ignore[attr-defined]
+        shcore = ctypes.WinDLL("shcore", use_last_error=True)  # type: ignore[attr-defined]
+        shcore.SetProcessDpiAwareness(1)
     except Exception:
-        with contextlib.suppress(Exception):
-            ctypes.windll.user32.SetProcessDPIAware()  # type: ignore[attr-defined]
+        try:
+            user32 = ctypes.WinDLL("user32", use_last_error=True)  # type: ignore[attr-defined]
+            user32.SetProcessDPIAware()
+        except Exception:
+            pass
+
+
+def _apply_windows_dark_frame(root: tk.Tk) -> None:
+    """Apply dark titlebar and border colors via Win32 DWM (eliminates top white bar)."""
+    if sys.platform != "win32":
+        return
+    try:
+        root.update_idletasks()
+        user32 = ctypes.WinDLL("user32", use_last_error=True)  # type: ignore[attr-defined]
+        dwmapi = ctypes.WinDLL("dwmapi", use_last_error=True)  # type: ignore[attr-defined]
+
+        user32.GetAncestor.argtypes = [ctypes.c_void_p, ctypes.c_uint32]
+        user32.GetAncestor.restype = ctypes.c_void_p
+        user32.GetParent.argtypes = [ctypes.c_void_p]
+        user32.GetParent.restype = ctypes.c_void_p
+        dwmapi.DwmSetWindowAttribute.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_uint32,
+            ctypes.c_void_p,
+            ctypes.c_uint32,
+        ]
+        dwmapi.DwmSetWindowAttribute.restype = ctypes.c_int32
+
+        child_hwnd = int(root.winfo_id())
+        top_hwnd = user32.GetAncestor(ctypes.c_void_p(child_hwnd), 2)  # GA_ROOT = 2
+        if not top_hwnd:
+            top_hwnd = user32.GetParent(ctypes.c_void_p(child_hwnd)) or child_hwnd
+
+        dark_val = ctypes.c_int32(1)
+        # Immersive dark mode (Windows 10 2004+ = 20, older Windows 10 = 19)
+        if dwmapi.DwmSetWindowAttribute(top_hwnd, 20, ctypes.byref(dark_val), 4) != 0:
+            dwmapi.DwmSetWindowAttribute(top_hwnd, 19, ctypes.byref(dark_val), 4)
+
+        # Windows 11 exact caption (#151820), text (#eceff4), and border (#262c3a) in COLORREF 0x00BBGGRR
+        caption_col = ctypes.c_uint32(0x00201815)
+        text_col = ctypes.c_uint32(0x00F4EFEC)
+        border_col = ctypes.c_uint32(0x003A2C26)
+        dwmapi.DwmSetWindowAttribute(top_hwnd, 35, ctypes.byref(caption_col), 4)
+        dwmapi.DwmSetWindowAttribute(top_hwnd, 36, ctypes.byref(text_col), 4)
+        dwmapi.DwmSetWindowAttribute(top_hwnd, 34, ctypes.byref(border_col), 4)
+    except Exception:
+        pass
 
 
 class ModernSlider(tk.Frame):
@@ -166,7 +260,7 @@ class ModernSlider(tk.Frame):
 
 
 class ToggleSwitch(tk.Frame):
-    """Clean pill toggle switch."""
+    """Smooth animated pill toggle switch (zero timers when settled)."""
 
     def __init__(
         self,
@@ -179,6 +273,9 @@ class ToggleSwitch(tk.Frame):
     ) -> None:
         super().__init__(parent, bg=bg)
         self._state = bool(initial)
+        self._pos = 1.0 if self._state else 0.0
+        self._anim_job: str | None = None
+        self._hovered = False
         self._on_change = on_change
 
         self._cv = tk.Canvas(
@@ -188,11 +285,14 @@ class ToggleSwitch(tk.Frame):
             bg=bg,
             highlightthickness=0,
             bd=0,
+            relief="flat",
             cursor="hand2",
         )
         self._cv.pack(side="left", padx=(0, 8))
+        self._track = self._cv.create_line(10, 10, 26, 10, fill=BG_ELEVATED, width=18, capstyle="round")
+        self._knob = self._cv.create_oval(4, 4, 16, 16, fill="#ffffff", outline="")
 
-        lbl = tk.Label(
+        self._lbl = tk.Label(
             self,
             text=label,
             bg=bg,
@@ -200,33 +300,69 @@ class ToggleSwitch(tk.Frame):
             font=("Segoe UI", 9),
             cursor="hand2",
         )
-        lbl.pack(side="left")
+        self._lbl.pack(side="left")
 
-        self._cv.bind("<Button-1>", self._toggle)
-        lbl.bind("<Button-1>", self._toggle)
-        self._draw()
+        for w in (self._cv, self._lbl):
+            w.bind("<Button-1>", self._toggle)
+            w.bind("<Enter>", self._on_enter)
+            w.bind("<Leave>", self._on_leave)
+        self._render()
 
     @property
     def value(self) -> bool:
         return self._state
 
-    def set_value(self, state: bool, *, notify: bool = False) -> None:
+    def set_value(self, state: bool, *, notify: bool = False, animate: bool = False) -> None:
         self._state = bool(state)
-        self._draw()
+        if self._anim_job is not None:
+            try:
+                self.after_cancel(self._anim_job)
+            except tk.TclError:
+                pass
+            self._anim_job = None
+
+        target = 1.0 if self._state else 0.0
+        if animate and abs(target - self._pos) > 0.02:
+            self._step_anim()
+        else:
+            self._pos = target
+            self._render()
         if notify:
             self._on_change(self._state)
 
     def _toggle(self, _event=None) -> None:
-        self._state = not self._state
-        self._draw()
-        self._on_change(self._state)
+        self.set_value(not self._state, notify=True, animate=True)
 
-    def _draw(self) -> None:
-        self._cv.delete("all")
-        track_col = ACCENT if self._state else BG_ELEVATED
-        self._cv.create_line(10, 10, 26, 10, fill=track_col, width=18, capstyle="round")
-        kx = 26 if self._state else 10
-        self._cv.create_oval(kx - 6, 4, kx + 6, 16, fill="#ffffff", outline="")
+    def _on_enter(self, _event=None) -> None:
+        self._hovered = True
+        self._render()
+
+    def _on_leave(self, _event=None) -> None:
+        self._hovered = False
+        self._render()
+
+    def _step_anim(self) -> None:
+        self._anim_job = None
+        target = 1.0 if self._state else 0.0
+        diff = target - self._pos
+        if abs(diff) <= 0.04:
+            self._pos = target
+            self._render()
+            return
+        self._pos += diff * 0.42
+        self._render()
+        try:
+            self._anim_job = self.after(16, self._step_anim)
+        except tk.TclError:
+            self._anim_job = None
+
+    def _render(self) -> None:
+        off_col = BG_HOVER if self._hovered else BG_ELEVATED
+        on_col = ACCENT_HOVER if self._hovered else ACCENT
+        track_col = _blend_hex(off_col, on_col, self._pos)
+        kx = 10.0 + 16.0 * self._pos
+        self._cv.itemconfig(self._track, fill=track_col)
+        self._cv.coords(self._knob, kx - 6.0, 4.0, kx + 6.0, 16.0)
 
 
 class SegmentedBar(tk.Frame):
@@ -241,7 +377,15 @@ class SegmentedBar(tk.Frame):
         on_change: Callable[[str], None],
         bg: str = BG_SURFACE,
     ) -> None:
-        super().__init__(parent, bg=BG_INPUT, padx=2, pady=2, highlightbackground=BORDER, highlightthickness=1)
+        super().__init__(
+            parent,
+            bg=BG_INPUT,
+            padx=2,
+            pady=2,
+            bd=0,
+            highlightbackground=BORDER,
+            highlightthickness=1,
+        )
         self._choices = options
         self._selected = initial
         self._on_change = on_change
@@ -261,6 +405,8 @@ class SegmentedBar(tk.Frame):
             )
             btn.grid(row=0, column=idx, sticky="ew", padx=1)
             btn.bind("<Button-1>", lambda _e, k=key: self.select(k, notify=True))
+            btn.bind("<Enter>", lambda _e, k=key, b=btn: b.configure(bg=BG_ELEVATED) if k != self._selected else None)
+            btn.bind("<Leave>", lambda _e, k=key, b=btn: b.configure(bg=BG_INPUT) if k != self._selected else None)
             self._buttons[key] = btn
 
     @property
@@ -286,7 +432,7 @@ class OpenDS4App:
         self.root.title("OpenDS4")
         self.root.geometry("1160x740")
         self.root.minsize(1020, 660)
-        self.root.configure(bg=BG_WINDOW)
+        self.root.configure(bg=BG_WINDOW, bd=0, highlightthickness=0)
 
         self.log_queue: queue.Queue[str] = queue.Queue()
         self.store = ProfileStore()
@@ -297,38 +443,54 @@ class OpenDS4App:
         self._loading_profile = False
         self._demo_active = False
         self._after_id: str | None = None
+        self._nav_anim_id: str | None = None
         self._current_page = "monitor"
         self._cfg_cache: dict[str, tuple] = {}
+        self._bar_smooth: dict[str, float] = {}
+        self._ui_tick = 0
 
         self._in_tray = False
         self._hiding_to_tray = False
         self._tray_balloon_shown = False
         self._window_icon: tk.PhotoImage | None = None
+        self._header_logo: tk.PhotoImage | None = None
 
-        init_rgb = (self.profile.lightbar_r, self.profile.lightbar_g, self.profile.lightbar_b)
         try:
-            self._window_icon = tk.PhotoImage(data=render_tk_ppm_icon(init_rgb, size=32))
+            self._window_icon = create_tk_window_icon(
+                self.root,
+                DEFAULT_ICON_TEAL,
+                size=32,
+                bg_rgb=(21, 24, 32),
+                transparent_bg=True,
+            )
             self.root.iconphoto(True, self._window_icon)
-        except tk.TclError:
+            self._header_logo = create_tk_window_icon(
+                self.root,
+                DEFAULT_ICON_TEAL,
+                size=26,
+                bg_rgb=(21, 24, 32),
+                transparent_bg=False,
+            )
+        except Exception:
             self._window_icon = None
+            self._header_logo = None
 
         self.engine = DS4MapperEngine(self.profile, on_log=self._enqueue_log)
-        self.tray = SystemTrayIcon(
-            get_snapshot=self._build_tray_snapshot,
-            on_action=self._handle_tray_action,
-            schedule_ui=lambda fn: self.root.after(0, fn),
-        )
-        self.tray.start(init_rgb)
+        self.tray = SystemTrayIcon(initial_snapshot=self._build_tray_snapshot())
+        self.tray.start(DEFAULT_ICON_TEAL)
 
         self._configure_ttk()
         self._build_shell()
         self._load_profile_into_ui(self.profile)
         self._switch_page("monitor")
+        _apply_windows_dark_frame(self.root)
+        self.root.after(60, lambda: _apply_windows_dark_frame(self.root))
 
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
         self.root.bind("<Unmap>", self._on_root_unmap)
 
         self.engine.start(demo_mode=False)
+        self.tray.set_snapshot(self._build_tray_snapshot())
         if start_minimized:
             self.root.after(40, lambda: self.hide_to_tray(silent=True))
         self._schedule_ui_refresh()
@@ -342,9 +504,18 @@ class OpenDS4App:
         widget.configure(**kwargs)
 
     def _configure_ttk(self) -> None:
+        self.root.option_add("*TCombobox*Listbox*Background", BG_ELEVATED)
+        self.root.option_add("*TCombobox*Listbox*Foreground", FG_TEXT)
+        self.root.option_add("*TCombobox*Listbox*selectBackground", ACCENT)
+        self.root.option_add("*TCombobox*Listbox*selectForeground", "#ffffff")
+        self.root.option_add("*TCombobox*Listbox*relief", "flat")
+        self.root.option_add("*TCombobox*Listbox*borderWidth", 0)
+
         style = ttk.Style(self.root)
-        with contextlib.suppress(tk.TclError):
+        try:
             style.theme_use("clam")
+        except tk.TclError:
+            pass
         style.configure(
             "TCombobox",
             fieldbackground=BG_ELEVATED,
@@ -371,6 +542,7 @@ class OpenDS4App:
         frame = tk.Frame(
             parent,
             bg=BG_SURFACE,
+            bd=0,
             highlightbackground=BORDER,
             highlightthickness=1,
             padx=padx,
@@ -397,7 +569,7 @@ class OpenDS4App:
         padx: int = 12,
         pady: int = 5,
     ) -> tk.Button:
-        return tk.Button(
+        btn = tk.Button(
             parent,
             text=text,
             command=command,
@@ -407,29 +579,49 @@ class OpenDS4App:
             activeforeground="#ffffff",
             relief="flat",
             bd=0,
-            highlightthickness=1,
-            highlightbackground=BORDER if bg == BG_ELEVATED else bg,
+            highlightthickness=0,
             padx=padx,
             pady=pady,
             cursor="hand2",
             font=("Segoe UI Semibold", 9),
         )
+        btn._base_bg = bg  # type: ignore[attr-defined]
+        btn._base_fg = fg  # type: ignore[attr-defined]
+
+        def _enter(_e=None) -> None:
+            cur_bg = btn.cget("bg")
+            if cur_bg == BG_ELEVATED:
+                btn.configure(bg=BG_HOVER, fg=FG_TEXT)
+            elif cur_bg == ACCENT:
+                btn.configure(bg=ACCENT_HOVER)
+
+        def _leave(_e=None) -> None:
+            cur_bg = btn.cget("bg")
+            if cur_bg == BG_HOVER:
+                btn.configure(bg=BG_ELEVATED, fg=btn._base_fg if btn._base_bg == BG_ELEVATED else FG_TEXT)  # type: ignore[attr-defined]
+            elif cur_bg == ACCENT_HOVER:
+                btn.configure(bg=ACCENT)
+
+        btn.bind("<Enter>", _enter)
+        btn.bind("<Leave>", _leave)
+        return btn
 
     def _build_shell(self) -> None:
-        # Top status bar
+        # Top status bar (borderless top edge, single 1px bottom hairline)
         top = tk.Frame(
             self.root,
             bg=BG_SIDEBAR,
-            highlightbackground=BORDER,
-            highlightthickness=1,
+            bd=0,
+            highlightthickness=0,
             padx=18,
             pady=10,
         )
         top.pack(fill="x")
+        tk.Frame(self.root, bg=BORDER, height=1, bd=0, highlightthickness=0).pack(fill="x")
 
         # Pack right controls first so action buttons are never clipped on narrow windows
         actions = tk.Frame(top, bg=BG_SIDEBAR)
-        actions.pack(side="right")
+        actions.pack(side="right", padx=(14, 0))
 
         self.btn_tray = self._flat_btn(
             actions,
@@ -463,6 +655,15 @@ class OpenDS4App:
 
         brand = tk.Frame(top, bg=BG_SIDEBAR)
         brand.pack(side="left")
+        if self._header_logo is not None:
+            tk.Label(
+                brand,
+                image=self._header_logo,
+                bg=BG_SIDEBAR,
+                bd=0,
+                highlightthickness=0,
+            ).pack(side="left", padx=(0, 8))
+
         tk.Label(
             brand,
             text="OpenDS4",
@@ -526,19 +727,20 @@ class OpenDS4App:
         self.header_led_dot.pack(side="left", padx=(6, 0))
 
         # Main body: Sidebar + Page container
-        body = tk.Frame(self.root, bg=BG_WINDOW)
+        body = tk.Frame(self.root, bg=BG_WINDOW, bd=0, highlightthickness=0)
         body.pack(fill="both", expand=True)
 
         sidebar = tk.Frame(
             body,
             bg=BG_SIDEBAR,
             width=195,
-            highlightbackground=BORDER,
-            highlightthickness=1,
+            bd=0,
+            highlightthickness=0,
             pady=12,
         )
         sidebar.pack(side="left", fill="y")
         sidebar.pack_propagate(False)
+        tk.Frame(body, bg=BORDER, width=1, bd=0, highlightthickness=0).pack(side="left", fill="y")
 
         nav_items = [
             ("monitor", "Live Monitor"),
@@ -549,9 +751,9 @@ class OpenDS4App:
         ]
         self._nav_buttons: dict[str, tuple[tk.Frame, tk.Frame, tk.Label]] = {}
         for key, title in nav_items:
-            row = tk.Frame(sidebar, bg=BG_SIDEBAR, cursor="hand2")
+            row = tk.Frame(sidebar, bg=BG_SIDEBAR, bd=0, highlightthickness=0, cursor="hand2")
             row.pack(fill="x", padx=10, pady=2)
-            bar = tk.Frame(row, bg=BG_SIDEBAR, width=3, height=32)
+            bar = tk.Frame(row, bg=BG_SIDEBAR, width=3, height=32, bd=0, highlightthickness=0)
             bar.pack(side="left", fill="y")
             lbl = tk.Label(
                 row,
@@ -565,8 +767,10 @@ class OpenDS4App:
                 cursor="hand2",
             )
             lbl.pack(side="left", fill="x", expand=True)
-            row.bind("<Button-1>", lambda _e, k=key: self._switch_page(k))
-            lbl.bind("<Button-1>", lambda _e, k=key: self._switch_page(k))
+            for w in (row, lbl):
+                w.bind("<Button-1>", lambda _e, k=key: self._switch_page(k))
+                w.bind("<Enter>", lambda _e, k=key: self._on_nav_hover(k, True))
+                w.bind("<Leave>", lambda _e, k=key: self._on_nav_hover(k, False))
             self._nav_buttons[key] = (row, bar, lbl)
 
         # Quick active profile footer inside sidebar
@@ -597,12 +801,12 @@ class OpenDS4App:
         ).pack(fill="x")
 
         # Content stack
-        self.page_host = tk.Frame(body, bg=BG_WINDOW, padx=18, pady=16)
+        self.page_host = tk.Frame(body, bg=BG_WINDOW, padx=18, pady=16, bd=0, highlightthickness=0)
         self.page_host.pack(side="left", fill="both", expand=True)
 
         self._pages: dict[str, tk.Frame] = {}
         for key, _ in nav_items:
-            frame = tk.Frame(self.page_host, bg=BG_WINDOW)
+            frame = tk.Frame(self.page_host, bg=BG_WINDOW, bd=0, highlightthickness=0)
             self._pages[key] = frame
 
         self._build_page_monitor(self._pages["monitor"])
@@ -611,9 +815,20 @@ class OpenDS4App:
         self._build_page_vibration(self._pages["vibration"])
         self._build_page_profiles(self._pages["profiles"])
 
+    def _on_nav_hover(self, key: str, entering: bool) -> None:
+        if key == self._current_page or key not in self._nav_buttons:
+            return
+        row, bar, lbl = self._nav_buttons[key]
+        bg = "#1c202c" if entering else BG_SIDEBAR
+        fg = FG_TEXT if entering else FG_SUB
+        row.configure(bg=bg)
+        bar.configure(bg=bg)
+        lbl.configure(bg=bg, fg=fg)
+
     def _switch_page(self, key: str) -> None:
         if key not in self._pages:
             return
+        prev_page = self._current_page
         self._current_page = key
         for k, frame in self._pages.items():
             if k == key:
@@ -621,15 +836,42 @@ class OpenDS4App:
             else:
                 frame.pack_forget()
 
+        if self._nav_anim_id is not None:
+            try:
+                self.root.after_cancel(self._nav_anim_id)
+            except tk.TclError:
+                pass
+            self._nav_anim_id = None
+
         for k, (row, bar, lbl) in self._nav_buttons.items():
-            if k == key:
-                row.configure(bg=BG_ELEVATED)
-                bar.configure(bg=ACCENT)
-                lbl.configure(bg=BG_ELEVATED, fg=FG_TEXT)
-            else:
+            if k != key:
                 row.configure(bg=BG_SIDEBAR)
                 bar.configure(bg=BG_SIDEBAR)
                 lbl.configure(bg=BG_SIDEBAR, fg=FG_SUB)
+
+        row, bar, lbl = self._nav_buttons[key]
+        bar.configure(bg=ACCENT)
+        if prev_page == key:
+            row.configure(bg=BG_ELEVATED)
+            lbl.configure(bg=BG_ELEVATED, fg=FG_TEXT)
+            return
+
+        # Lightweight 4-frame fade into active tab (stops immediately on step 4)
+        def _fade_step(step: int) -> None:
+            self._nav_anim_id = None
+            if self._current_page != key:
+                return
+            t = step / 4.0
+            bg = _blend_hex(BG_SIDEBAR, BG_ELEVATED, t)
+            row.configure(bg=bg)
+            lbl.configure(bg=bg, fg=FG_TEXT)
+            if step < 4:
+                try:
+                    self._nav_anim_id = self.root.after(16, lambda: _fade_step(step + 1))
+                except tk.TclError:
+                    self._nav_anim_id = None
+
+        _fade_step(1)
 
     # -------------------- Page 1: Live Monitor --------------------
 
@@ -739,6 +981,8 @@ class OpenDS4App:
             width=self.tp_w,
             height=self.tp_h,
             bg=BG_INPUT,
+            bd=0,
+            relief="flat",
             highlightbackground=BORDER,
             highlightthickness=1,
         )
@@ -786,6 +1030,8 @@ class OpenDS4App:
             width=size,
             height=size,
             bg=BG_INPUT,
+            bd=0,
+            relief="flat",
             highlightbackground=BORDER,
             highlightthickness=1,
         )
@@ -828,6 +1074,8 @@ class OpenDS4App:
             box,
             height=TRIGGER_BAR_HEIGHT,
             bg=BG_INPUT,
+            bd=0,
+            relief="flat",
             highlightbackground=BORDER,
             highlightthickness=1,
         )
@@ -985,13 +1233,17 @@ class OpenDS4App:
         # Persistent curve graph (updates coordinates only, never deletes/rebuilds)
         curve_box = tk.Frame(split, bg=BG_SURFACE)
         curve_box.grid(row=0, column=1, sticky="ns")
-        tk.Label(curve_box, text="Aim Curve", bg=BG_SURFACE, fg=FG_SUB, font=("Segoe UI", 8)).pack(pady=(0, 4))
+        tk.Label(curve_box, text="Aim Curve", bg=BG_SURFACE, fg=FG_SUB, font=("Segoe UI", 8)).pack(
+            pady=(0, 4)
+        )
         w, h = 112, 112
         self.curve_canvas = tk.Canvas(
             curve_box,
             width=w,
             height=h,
             bg=BG_INPUT,
+            bd=0,
+            relief="flat",
             highlightbackground=BORDER,
             highlightthickness=1,
         )
@@ -1066,7 +1318,7 @@ class OpenDS4App:
 
         self.lbl_led_info = tk.Label(
             self.led_preview,
-            text="#005AFF  ·  Static Color",
+            text="#005AFF  ·  Solid Color",
             bg="#005aff",
             fg="#ffffff",
             font=("Consolas", 9, "bold"),
@@ -1080,7 +1332,7 @@ class OpenDS4App:
             bg=BG_ELEVATED,
         ).pack(side="right")
 
-        # 4x3 clickable mode grid
+        # 4x2 clickable mode grid
         mode_grid = tk.Frame(top_card, bg=BG_SURFACE)
         mode_grid.pack(fill="x")
         for c in range(4):
@@ -1094,15 +1346,28 @@ class OpenDS4App:
                 text=mode_title,
                 bg=BG_INPUT,
                 fg=FG_SUB,
-                pady=7,
+                pady=8,
                 padx=8,
                 font=("Segoe UI Semibold", 9),
+                bd=0,
                 highlightbackground=BORDER,
                 highlightthickness=1,
                 cursor="hand2",
             )
             btn.grid(row=r, column=c, sticky="ew", padx=3, pady=3)
             btn.bind("<Button-1>", lambda _e, mk=mode_key: self._select_lightbar_mode(mk))
+            btn.bind(
+                "<Enter>",
+                lambda _e, mk=mode_key, b=btn: b.configure(bg=BG_ELEVATED, fg=FG_TEXT)
+                if mk != self.profile.lightbar_mode
+                else None,
+            )
+            btn.bind(
+                "<Leave>",
+                lambda _e, mk=mode_key, b=btn: b.configure(bg=BG_INPUT, fg=FG_SUB)
+                if mk != self.profile.lightbar_mode
+                else None,
+            )
             self._mode_cards[mode_key] = btn
 
         # Bottom controls: Color & Animation speed
@@ -1546,7 +1811,7 @@ class OpenDS4App:
         self.sl_led_r.set_value(r, notify=False)
         self.sl_led_g.set_value(g, notify=False)
         self.sl_led_b.set_value(b, notify=False)
-        if self.profile.lightbar_mode not in ("static", "breathing", "rumble_reactive"):
+        if self.profile.lightbar_mode not in ("static", "breathing", "color_pulse"):
             self._select_lightbar_mode("static")
         else:
             self.engine.update_profile(self.profile, sync_lightbar=True)
@@ -1808,17 +2073,20 @@ class OpenDS4App:
         cv.coords(radar["out_line"], c, c, ox_px, oy_px)
         cv.coords(radar["out_dot"], ox_px - 5, oy_px - 5, ox_px + 5, oy_px + 5)
 
-        self._set_cached(
-            radar["label"], f"radar_{key}", text=f"Raw {raw_x:3d},{raw_y:3d}  |  XInput {out_x:6d},{out_y:6d}"
-        )
+        self._set_cached(radar["label"], f"radar_{key}", text=f"Raw {raw_x:3d},{raw_y:3d}  |  XInput {out_x:6d},{out_y:6d}")
 
     def _update_trigger_widget(self, widget: dict, raw_v: int, out_v: int, key: str = "") -> None:
         cv: tk.Canvas = widget["canvas"]
         w = max(1, cv.winfo_width())
         h: int = widget["height"]
-        fill_w = (out_v / 255.0) * w
+        bar_id = key or str(id(widget))
+        target = float(out_v)
+        cur = self._bar_smooth.get(bar_id, target)
+        cur = target if abs(target - cur) < 0.75 else (cur + (target - cur) * 0.48)
+        self._bar_smooth[bar_id] = cur
+        fill_w = (cur / 255.0) * w
         cv.coords(widget["rect"], 0, 0, fill_w, h)
-        self._set_cached(widget["label"], f"trig_{key or id(widget)}", text=f"{out_v:3d} / 255")
+        self._set_cached(widget["label"], f"trig_{bar_id}", text=f"{out_v:3d} / 255")
 
     def _render_telemetry(self, t: EngineTelemetry) -> None:
         # Always-visible header status (diff-cached so idle frames cost ~0)
@@ -1901,7 +2169,7 @@ class OpenDS4App:
             )
         elif page == "lightbar":
             fg_info = "#111318" if (lr * 0.299 + lg * 0.587 + lb * 0.114) > 150 else "#ffffff"
-            mode_label = LIGHTBAR_MODES.get(self.profile.lightbar_mode, "Static Color")
+            mode_label = LIGHTBAR_MODES.get(self.profile.lightbar_mode, "Solid Color")
             self._set_cached(self.led_preview, "led_prev_bg", bg=hex_col)
             self._set_cached(
                 self.lbl_led_info,
@@ -2068,58 +2336,141 @@ class OpenDS4App:
         self._hiding_to_tray = True
         self._in_tray = True
         self.root.withdraw()
-        snap = self._build_tray_snapshot()
-        self.tray.update_state(snap.tooltip, snap.accent_rgb)
+        self.tray.set_snapshot(self._build_tray_snapshot())
         if not silent and not self._tray_balloon_shown:
             self._tray_balloon_shown = True
             self.tray.show_balloon(
                 "OpenDS4",
-                "Minimized to system tray. Click the tray icon to reopen or right-click for quick settings.",
+                "Minimized to system tray. Left-click to reopen or right-click for quick settings.",
             )
         self.root.after(80, lambda: setattr(self, "_hiding_to_tray", False))
 
     def restore_from_tray(self) -> None:
         self._in_tray = False
         self.root.deiconify()
-        with contextlib.suppress(tk.TclError):
+        try:
             self.root.state("normal")
+        except tk.TclError:
+            pass
+        _apply_windows_dark_frame(self.root)
         self.root.lift()
-        with contextlib.suppress(tk.TclError):
+        try:
             self.root.focus_force()
+        except tk.TclError:
+            pass
+
+    def _drain_tray_actions(self) -> None:
+        while True:
+            act = self.tray.pop_action()
+            if act is None:
+                break
+            self._handle_tray_action(act)
+            if self.tray.available:
+                self.tray.set_snapshot(self._build_tray_snapshot())
 
     def _schedule_ui_refresh(self) -> None:
-        self._drain_logs()
-        if self._in_tray:
-            snap = self._build_tray_snapshot()
-            self.tray.update_state(snap.tooltip, snap.accent_rgb)
-            self._after_id = self.root.after(250, self._schedule_ui_refresh)
+        self._drain_tray_actions()
+        if not self.root.winfo_exists():
             return
 
+        self._ui_tick += 1
+
+        if self._in_tray:
+            # Ultra-low-overhead tray mode: skip all UI/Canvas/telemetry rendering.
+            # Sync tray snapshot only every ~3.5 seconds (and set_snapshot only wakes
+            # the Win32 tray thread when tooltip text actually changes).
+            if self.tray.available and (self._ui_tick % 25 == 0):
+                self.tray.set_snapshot(self._build_tray_snapshot())
+            self._after_id = self.root.after(140, self._schedule_ui_refresh)
+            return
+
+        self._drain_logs()
         t = self.engine.get_telemetry()
         self._render_telemetry(t)
-        if self.tray.available:
-            snap = self._build_tray_snapshot()
-            self.tray.update_state(snap.tooltip, snap.accent_rgb)
-        self._after_id = self.root.after(16, self._schedule_ui_refresh)
+        if self.tray.available and (self._ui_tick % 30 == 0):
+            self.tray.set_snapshot(self._build_tray_snapshot())
+
+        interval_ms = 16 if (t.connected or t.demo_mode) else 100
+        self._after_id = self.root.after(interval_ms, self._schedule_ui_refresh)
 
     def _on_close(self) -> None:
-        if self._after_id is not None:
-            with contextlib.suppress(tk.TclError):
-                self.root.after_cancel(self._after_id)
-            self._after_id = None
+        for job_attr in ("_after_id", "_nav_anim_id"):
+            job = getattr(self, job_attr, None)
+            if job is not None:
+                try:
+                    self.root.after_cancel(job)
+                except tk.TclError:
+                    pass
+                setattr(self, job_attr, None)
         self.tray.stop()
         self.engine.stop()
         self.root.destroy()
 
 
-def main(argv: list[str] | None = None) -> None:
+def _run_self_test() -> int:
+    """Fast preflight check used by run_windows.bat before detaching pythonw.exe."""
+    from ds4_touchpad import INPUT, TouchpadMouseController
+    from ds4_tray import MSG, NOTIFYICONDATAW, WNDCLASSEXW, render_gamepad_icon_rgba
+
+    assert ctypes.sizeof(INPUT) > 0
+    assert ctypes.sizeof(MSG) > 0
+    assert ctypes.sizeof(WNDCLASSEXW) > 0
+    assert ctypes.sizeof(NOTIFYICONDATAW) > 0
+    assert len(render_gamepad_icon_rgba()) == 32 * 32 * 4
+    _ = TouchpadMouseController()
+    _ = ControllerProfile()
+    return 0
+
+
+def _report_fatal_error(exc: BaseException) -> None:
+    details = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+    log_path = Path(__file__).resolve().parent / "opends4_error.log"
+    try:
+        log_path.write_text(details, encoding="utf-8")
+    except OSError:
+        pass
+
+    if sys.stderr is not None:
+        try:
+            sys.stderr.write(details + "\n")
+            sys.stderr.flush()
+        except Exception:
+            pass
+
+    if sys.platform == "win32":
+        try:
+            user32 = ctypes.WinDLL("user32", use_last_error=True)  # type: ignore[attr-defined]
+            user32.MessageBoxW.argtypes = [
+                ctypes.c_void_p,
+                ctypes.c_wchar_p,
+                ctypes.c_wchar_p,
+                ctypes.c_uint32,
+            ]
+            user32.MessageBoxW.restype = ctypes.c_int32
+            msg = f"OpenDS4 failed to start:\n\n{exc}\n\nFull traceback saved to:\n{log_path}"
+            user32.MessageBoxW(None, msg, "OpenDS4 Startup Error", 0x00000010)
+        except Exception:
+            pass
+
+
+def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
+    if "--self-test" in args:
+        return _run_self_test()
+
     start_minimized = ("--minimized" in args) or ("-m" in args)
     _enable_windows_dpi_awareness()
     root = tk.Tk()
     OpenDS4App(root, start_minimized=start_minimized)
     root.mainloop()
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        raise SystemExit(main())
+    except SystemExit:
+        raise
+    except Exception as _fatal:
+        _report_fatal_error(_fatal)
+        raise SystemExit(1)

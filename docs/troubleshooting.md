@@ -63,6 +63,9 @@ The game is reading the physical pad as DirectInput and the virtual pad as XInpu
 - **`Could not create .venv`** — move the project out of a read-only or synced folder, or run it from a local directory.
 - **Antivirus warning** — the app is plain Python with no binary payload. If a scanner blocks `pythonw.exe`, add an exclusion for the project folder. OpenDS4 never opens a network socket, so a firewall alert from it would be unexpected.
 - **Stale environment** — delete `.venv` and run the launcher again.
+- **`OpenDS4 preflight check failed`** — the launcher runs `app.py --self-test` before opening the window. Run that command manually from `.venv\Scripts\python.exe` to see the exact failure; it usually points at a broken Tcl/Tk install or a damaged environment.
+- **A message box says OpenDS4 failed to start** — the full traceback is in `opends4_error.log` next to `app.py`. Attach it to a bug report.
+- **Running from CMD** — `python app.py` works without activating `.venv`, because the app attaches the local site-packages at startup. If packages are still missing, run `run_windows.bat --console` once to repair the environment.
 
 ## High CPU or stutter
 
@@ -76,7 +79,7 @@ The game is reading the physical pad as DirectInput and the virtual pad as XInpu
 Close the app, then delete:
 
 - `.venv\` — recreated on the next launch
-- `profiles\` — recreated with the four built-in presets
+- `profiles\` — recreated with the three built-in presets
 
 Your OS-level Bluetooth pairing and the ViGEmBus driver are untouched.
 
@@ -85,5 +88,5 @@ Your OS-level Bluetooth pairing and the ViGEmBus driver are untouched.
 1. Close any running OpenDS4 instance.
 2. Run `run_windows.bat --console`.
 3. Reproduce the problem.
-4. Copy the console output, plus the Windows version, Python version, controller model, and connection type.
+4. Copy the console output, plus the Windows version, Python version, controller model, and connection type. Include `opends4_error.log` if it exists.
 5. Attach it to a bug report.

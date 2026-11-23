@@ -2,25 +2,24 @@
 
 from __future__ import annotations
 
-import contextlib
+from collections import deque
+from collections.abc import Callable
 import ctypes
+from dataclasses import dataclass, field
 import math
 import os
+from pathlib import Path
 import sys
 import threading
 import time
-from collections import deque
-from collections.abc import Callable
-from dataclasses import dataclass, field
-from pathlib import Path
 
 from ds4_profile import ControllerProfile
 from ds4_protocol import (
     DS4_FEATURE_REPORT_CALIBRATION,
     DS4_FEATURE_REPORT_CALIBRATION_SIZE,
     DS4_PRODUCT_IDS,
-    SONY_VENDOR_ID,
     DS4InputState,
+    SONY_VENDOR_ID,
     TouchFinger,
     Xbox360OutputState,
     build_bt_output_report,
@@ -31,13 +30,20 @@ from ds4_touchpad import TouchpadMouseController
 
 try:
     import hid  # type: ignore
-except ImportError:
+except (ImportError, OSError):
     hid = None
 
+os.environ.setdefault("VGAMEPAD_SKIP_VIGEMBUS_INSTALL", "true")
 try:
     import vgamepad as vg  # type: ignore
+
+    _VG_IMPORT_ERROR: str | None = None
 except ImportError:
     vg = None
+    _VG_IMPORT_ERROR = "vgamepad not installed"
+except Exception as _vg_exc:
+    vg = None
+    _VG_IMPORT_ERROR = f"ViGEmBus missing ({_vg_exc})"
 
 DS4_HID_READ_TIMEOUT_MS = 4
 DEMO_TARGET_PERIOD_SEC = 0.004
@@ -47,7 +53,11 @@ DS4_MOTOR_KEEPALIVE_SEC = 0.180
 
 def _is_bluetooth_hid_path(path_str: str) -> bool:
     lowered = path_str.lower()
-    return "bthenum" in lowered or "00001124-0000-1000-8000-00805f9b34fb" in lowered or "bthle" in lowered
+    return (
+        "bthenum" in lowered
+        or "00001124-0000-1000-8000-00805f9b34fb" in lowered
+        or "bthle" in lowered
+    )
 
 
 def detect_hidhide_installed() -> bool:
@@ -96,7 +106,7 @@ class _Win32HidOutputFallback:
                 if isinstance(self._raw_path, (bytes, bytearray))
                 else str(self._raw_path)
             )
-            kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined]
             generic_rw = 0x80000000 | 0x40000000
             share_rw = 0x00000001 | 0x00000002
             open_existing = 3
@@ -131,18 +141,18 @@ class _Win32HidOutputFallback:
         if not self._ensure_open() or not self._handle:
             return False
         try:
-            hid_dll = ctypes.windll.hid  # type: ignore[attr-defined]
+            hid_dll = ctypes.WinDLL("hid", use_last_error=True)  # type: ignore[attr-defined]
             hid_dll.HidD_SetOutputReport.argtypes = [
                 ctypes.c_void_p,
                 ctypes.c_void_p,
-                ctypes.c_ulong,
+                ctypes.c_uint32,
             ]
             hid_dll.HidD_SetOutputReport.restype = ctypes.c_ubyte
             buf = ctypes.create_string_buffer(payload, len(payload))
             ok = hid_dll.HidD_SetOutputReport(
                 ctypes.c_void_p(self._handle),
                 buf,
-                ctypes.c_ulong(len(payload)),
+                ctypes.c_uint32(len(payload)),
             )
             return bool(ok)
         except Exception:
@@ -151,9 +161,9 @@ class _Win32HidOutputFallback:
     def close(self) -> None:
         if sys.platform == "win32" and self._handle:
             try:
-                kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+                kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined]
                 kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
-                kernel32.CloseHandle.restype = ctypes.c_int
+                kernel32.CloseHandle.restype = ctypes.c_int32
                 kernel32.CloseHandle(ctypes.c_void_p(self._handle))
             except Exception:
                 pass
@@ -363,7 +373,11 @@ class DS4MapperEngine:
         self._xusb_button_map = self._build_xusb_button_map()
 
         if vg is None:
-            return None, "vgamepad not installed"
+            reason = _VG_IMPORT_ERROR or "vgamepad not installed"
+            if "ViGEmBus" in reason or "VIGEM" in reason.upper():
+                self._log("ViGEmBus driver not found. Install Nefarius ViGEmBus for XInput emulation.")
+                return None, "ViGEmBus driver missing"
+            return None, reason
         try:
             pad = vg.VX360Gamepad()
 
@@ -500,7 +514,9 @@ class DS4MapperEngine:
     def _open_hid_device(self, info: dict):
         raw_path = info["path"]
         path_str = (
-            raw_path.decode("utf-8", errors="ignore") if isinstance(raw_path, (bytes, bytearray)) else str(raw_path)
+            raw_path.decode("utf-8", errors="ignore")
+            if isinstance(raw_path, (bytes, bytearray))
+            else str(raw_path)
         )
         is_bt = _is_bluetooth_hid_path(path_str)
         pid = int(info.get("product_id", 0))
@@ -612,7 +628,8 @@ class DS4MapperEngine:
             if dev is None:
                 last_motor_sig = None
                 last_rgb_sig = None
-                self._output_event.wait(timeout=0.08)
+                idle_wait = 0.05 if (profile.is_animated_lightbar or now_mono < self._test_until) else 0.45
+                self._output_event.wait(timeout=idle_wait)
                 self._output_event.clear()
                 continue
 
@@ -705,8 +722,10 @@ class DS4MapperEngine:
         finally:
             self._reset_virtual_xbox(vpad)
             if vpad is not None:
-                with contextlib.suppress(Exception):
+                try:
                     vpad.unregister_notification()
+                except Exception:
+                    pass
             self._rumble_cb = None
 
     def _run_demo_loop(self, vpad) -> None:
@@ -845,8 +864,10 @@ class DS4MapperEngine:
                     with self._lock:
                         self._active_dev = None
                         self._active_fallback = None
-                    with contextlib.suppress(Exception):
+                    try:
                         dev.close()
+                    except Exception:
+                        pass
                     if win_fallback:
                         win_fallback.close()
                     dev = None
@@ -929,7 +950,7 @@ class DS4MapperEngine:
                 self._active_dev = None
                 self._active_fallback = None
             if dev is not None:
-                with contextlib.suppress(Exception):
+                try:
                     self._send_ds4_feedback(
                         dev,
                         win_fallback,
@@ -943,7 +964,11 @@ class DS4MapperEngine:
                         large_rumble=0,
                         bt_poll_ms=4,
                     )
-                with contextlib.suppress(Exception):
+                except Exception:
+                    pass
+                try:
                     dev.close()
+                except Exception:
+                    pass
             if win_fallback is not None:
                 win_fallback.close()

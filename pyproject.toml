@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "opends4"
-version = "1.0.0"
+version = "1.1.0"
 description = "DualShock 4 to Xbox 360 (XInput) controller mapper for Windows"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -76,13 +76,8 @@ target-version = "py310"
 extend-exclude = ["profiles"]
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
+# Core correctness checks. Style-only rules are not enforced.
+select = ["E4", "E7", "E9", "F", "W"]
 ignore = [
-    "BLE001",  # optional Win32/platform calls are deliberately guarded with broad excepts
-    "RUF046",  # explicit int() casts keep numeric ranges and clamps obvious
-    "S110",    # best-effort platform calls intentionally swallow errors
-    "SIM112",  # Windows environment variables are case-insensitive and conventionally PascalCase
+    "E402",  # app.py bootstraps the local .venv before importing project modules
 ]
-
-[tool.ruff.lint.per-file-ignores]
-"tests/*" = ["E402"]  # sys.path setup must precede project imports

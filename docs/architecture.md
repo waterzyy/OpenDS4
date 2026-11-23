@@ -22,16 +22,17 @@ flowchart LR
 
 | Thread | Name | Responsibility |
 | --- | --- | --- |
-| Main | `MainThread` | `tkinter` event loop, rendering, profile edits, tray callbacks. |
+| Main | `MainThread` | `tkinter` event loop, rendering, profile edits. |
 | Input | `OpenDS4-Input` | Opens the HID device, reads reports, parses them, maps them, and applies the result to the virtual pad. |
 | Output | `OpenDS4-Output` | Sends lightbar and rumble output reports. Runs independently so a slow Bluetooth write cannot stall input polling. |
+| Tray | tray worker | Runs the Win32 `GetMessageW` loop for `Shell_NotifyIconW`, repaints the icon, and posts menu actions to the UI through a `SimpleQueue`. |
 
 The input loop uses a read timeout instead of `time.sleep`, and the output worker wakes on an event. This is verified by `tests/test_ds4.py`, which rejects any `time.sleep` call in `ds4_engine.py`.
 
 Timing targets:
 
 - Input and simulator loop: 250 Hz (4 ms per frame).
-- Lightbar animation refresh: 35 ms while an animated mode or active motors are present, 250 ms when idle.
+- Lightbar animation refresh: 40 ms while an animated mode or active motors are present, 250 ms when idle.
 - Idle keepalive: one output report every 2 seconds so the pad keeps its LED state.
 
 ## Modules
@@ -71,11 +72,13 @@ If `vgamepad` is unavailable, the app still reads and displays the controller; i
 
 ### `ds4_tray.py`
 
-A pure-`ctypes` implementation of `Shell_NotifyIconW`, so the tray works without third-party packages or binary icon assets. `render_gamepad_icon_rgba` draws the tray icon in memory, and `build_tray_menu_tree` builds a declarative menu description that the UI turns into a Win32 `HMENU`. On non-Windows platforms the module degrades to a no-op and remains importable for tests.
+A dedicated-thread implementation of `Shell_NotifyIconW`. The worker runs its own `GetMessageW` loop and communicates with the UI only through a thread-safe `SimpleQueue`, so Win32 callbacks and `TrackPopupMenu` never re-enter Tcl/Tk. The module uses explicit fixed-width ABI types (`HANDLE`, `WPARAM`, `LPARAM`, and friends) instead of `ctypes.wintypes`, which keeps the structures identical on 32-bit and 64-bit Python. `render_gamepad_icon_rgba` draws the tray icon in memory, and `build_tray_menu_tree` builds a declarative menu description that the tray thread turns into a Win32 `HMENU`. On non-Windows platforms the module degrades to a no-op and remains importable for tests.
 
 ### `app.py`
 
-The `tkinter` interface: a top status bar, five pages, and the shared widgets (`ModernSlider`, `ToggleSwitch`, `SegmentedBar`). The UI polls engine telemetry every 16 ms while visible and every 250 ms while minimized. Widget updates are cached so unchanged values do not trigger Tcl work.
+The `tkinter` interface: a top status bar, five pages, and the shared widgets (`ModernSlider`, `ToggleSwitch`, `SegmentedBar`). The window applies a dark DWM titlebar on Windows, so the title bar matches the dark theme instead of flashing white. The UI polls engine telemetry every 16 ms while visible and every 250 ms while minimized. Widget updates are cached so unchanged values do not trigger Tcl work.
+
+At import time `_attach_local_venv()` adds the project's `.venv` site-packages when the app is started with the system interpreter, which makes `python app.py` work from a plain command prompt. `--self-test` runs a headless check of the Win32 structures, icon renderer, and controller classes; the launcher uses it as a preflight. Fatal startup errors are written to `opends4_error.log` and shown in a Windows message box.
 
 ## Simulator
 

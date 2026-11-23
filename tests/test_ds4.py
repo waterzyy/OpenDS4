@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import ast
+import ctypes
+from enum import Enum
 import inspect
+from pathlib import Path
 import struct
 import sys
 import time
-from enum import Enum
-from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
@@ -18,9 +19,9 @@ import app as opends4_app
 from ds4_engine import DS4MapperEngine
 from ds4_profile import LIGHTBAR_MODES, ControllerProfile, ProfileStore
 from ds4_protocol import (
+    DS4InputState,
     PS_INPUT_CRC32_SEED,
     PS_OUTPUT_CRC32_SEED,
-    DS4InputState,
     TouchFinger,
     Xbox360OutputState,
     build_bt_output_report,
@@ -32,6 +33,7 @@ from ds4_protocol import (
     verify_bt_input_crc32,
 )
 from ds4_touchpad import (
+    INPUT,
     MOUSEEVENTF_LEFTDOWN,
     MOUSEEVENTF_LEFTUP,
     MOUSEEVENTF_MOVE,
@@ -42,6 +44,13 @@ from ds4_touchpad import (
     TouchpadMouseController,
 )
 from ds4_tray import (
+    BITMAPINFOHEADER,
+    MSG,
+    NOTIFYICONDATAW,
+    WM_LBUTTONUP,
+    WM_RBUTTONUP,
+    WM_TRAY_CALLBACK,
+    WNDCLASSEXW,
     SystemTrayIcon,
     TraySnapshot,
     build_tray_menu_tree,
@@ -165,8 +174,15 @@ def test_output_reports_usb_and_bt() -> None:
 
 
 def test_profile_remapping_rumble_and_persistence(tmp_path: Path) -> None:
-    store = ProfileStore(tmp_path / "profiles")
-    assert len(store.list_names()) >= 4
+    prof_dir = tmp_path / "profiles"
+    prof_dir.mkdir(parents=True)
+    # Seed a legacy Cyberpunk.json to verify automatic cleanup on startup
+    (prof_dir / "Cyberpunk.json").write_text('{"name": "Cyberpunk"}', encoding="utf-8")
+
+    store = ProfileStore(prof_dir)
+    names = store.list_names()
+    assert names == ["Default", "Racing", "Shooter"]
+    assert not (prof_dir / "Cyberpunk.json").exists()
 
     prof = ControllerProfile(
         name="Custom Rig",
@@ -182,6 +198,10 @@ def test_profile_remapping_rumble_and_persistence(tmp_path: Path) -> None:
     assert loaded.button_map["cross"] == "B"
     assert loaded.button_map["touch_click"] == "Disabled"
     assert loaded.trigger_rumble is True
+
+    # Legacy removed lightbar mode keys gracefully fall back to 'static'
+    legacy = ControllerProfile.from_dict({"name": "OldCfg", "lightbar_mode": "cyberpunk"})
+    assert legacy.lightbar_mode == "static"
 
     # Verify independent motor scaling and trigger haptics mixing
     ds4_pull = DS4InputState(l2=240, r2=255)
@@ -313,7 +333,9 @@ def test_no_blocking_time_sleep_and_decoupled_io() -> None:
     for node in ast.walk(tree):
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
             assert not (
-                isinstance(node.func.value, ast.Name) and node.func.value.id == "time" and node.func.attr == "sleep"
+                isinstance(node.func.value, ast.Name)
+                and node.func.value.id == "time"
+                and node.func.attr == "sleep"
             )
 
     # Ensure hardware input loop delegates feedback writes to _run_output_worker
@@ -337,8 +359,9 @@ def test_trigger_bar_height_consistency() -> None:
     assert ", 16)" not in src_update
 
 
-def test_all_12_rgb_lightbar_modes(tmp_path: Path) -> None:
-    assert len(LIGHTBAR_MODES) == 12
+def test_all_8_rgb_lightbar_modes(tmp_path: Path) -> None:
+    assert len(LIGHTBAR_MODES) == 8
+    assert "cyberpunk" not in LIGHTBAR_MODES
     ds4_idle = DS4InputState(lx=128, ly=128, rx=128, ry=128, l2=0, r2=0)
     ds4_active = DS4InputState(lx=255, ly=0, rx=128, ry=128, l2=255, r2=255)
 
@@ -369,44 +392,225 @@ def test_all_12_rgb_lightbar_modes(tmp_path: Path) -> None:
             assert len(samples) >= 2
 
     store = ProfileStore(tmp_path / "rgb_profiles")
-    store.save(ControllerProfile(name="Neon", lightbar_mode="cyberpunk", lightbar_speed=2.0))
-    loaded = store.load("Neon")
-    assert loaded.lightbar_mode == "cyberpunk"
-    assert abs(loaded.lightbar_speed - 2.0) < 1e-6
+    store.save(ControllerProfile(name="OceanPad", lightbar_mode="ocean", lightbar_speed=1.6))
+    loaded = store.load("OceanPad")
+    assert loaded.lightbar_mode == "ocean"
+    assert abs(loaded.lightbar_speed - 1.6) < 1e-6
 
 
-def test_tray_icon_menu_and_launcher_script(tmp_path: Path) -> None:
-    rgba_blue = render_gamepad_icon_rgba((0, 120, 255), size=32)
+def test_tray_icon_menu_win32_simulation_and_launcher(tmp_path: Path) -> None:
+    import queue as _q
+
+    # Verify Win32 ABI structures load without ctypes.wintypes on every OS
+    if ctypes.sizeof(ctypes.c_void_p) == 8:
+        assert ctypes.sizeof(INPUT) == 40
+        assert ctypes.sizeof(MSG) == 48
+        assert ctypes.sizeof(WNDCLASSEXW) == 80
+    assert ctypes.sizeof(BITMAPINFOHEADER) == 40
+    assert ctypes.sizeof(NOTIFYICONDATAW) > 900
+
+    for mod_name in ("ds4_tray.py", "ds4_touchpad.py"):
+        mod_txt = (PROJECT_ROOT / mod_name).read_text(encoding="utf-8")
+        assert "wintypes." not in mod_txt, f"Unsafe wintypes attribute in {mod_name}"
+
+    rgba_teal = render_gamepad_icon_rgba((36, 148, 172), size=32)
     rgba_red = render_gamepad_icon_rgba((255, 20, 40), size=32)
-    assert len(rgba_blue) == 32 * 32 * 4
-    assert rgba_blue != rgba_red
-    assert any(rgba_blue[i + 3] == 255 for i in range(0, len(rgba_blue), 4))
+    assert len(rgba_teal) == 32 * 32 * 4
+    assert rgba_teal != rgba_red
+    assert any(rgba_teal[i + 3] == 255 for i in range(0, len(rgba_teal), 4))
 
-    ppm = render_tk_ppm_icon((0, 120, 255), size=32)
+    ppm = render_tk_ppm_icon((36, 148, 172), size=32)
     assert ppm.startswith(b"P6\n32 32\n255\n")
     assert len(ppm) == len(b"P6\n32 32\n255\n") + 32 * 32 * 3
 
     snap = TraySnapshot(
         status_line="DualShock 4 (USB) · 90%",
         tooltip="OpenDS4 - USB · Battery 90%",
-        active_profile="Cyberpunk",
-        profile_names=["Default", "Cyberpunk"],
-        active_lightbar_mode="cyberpunk",
+        active_profile="Shooter",
+        profile_names=["Default", "Shooter", "Racing"],
+        active_lightbar_mode="ocean",
         lightbar_modes=dict(LIGHTBAR_MODES),
         rumble_enabled=True,
         trigger_rumble=False,
+        touchpad_mouse=True,
         engine_running=True,
-        accent_rgb=(180, 0, 255),
+        accent_rgb=(36, 148, 172),
     )
     tree = build_tray_menu_tree(snap)
     assert tree[0].action_id == "restore" and tree[0].default is True
-    prof_sub = next(item for item in tree if item.kind == "submenu" and item.label == "Active Profile")
-    checked_profs = [c.label for c in prof_sub.children if c.checked]
-    assert checked_profs == ["Cyberpunk"]
-
+    prof_sub = next(item for item in tree if item.kind == "submenu" and item.label == "Profile")
+    assert [c.label for c in prof_sub.children if c.checked] == ["Shooter"]
     led_sub = next(item for item in tree if item.kind == "submenu" and item.label == "Lightbar Mode")
-    assert len(led_sub.children) == 12
-    assert [c.action_id for c in led_sub.children if c.checked] == ["lightbar:cyberpunk"]
+    assert len(led_sub.children) == 8
+    assert [c.action_id for c in led_sub.children if c.checked] == ["lightbar:ocean"]
+
+    # Simulate dedicated Win32 tray thread message loop (GetMessageW -> DispatchMessageW)
+    class MockKernel32:
+        def GetModuleHandleW(self, _name):
+            return 0x100000
+
+    class MockGdi32:
+        def __init__(self) -> None:
+            self.dib_buf = ctypes.create_string_buffer(32 * 32 * 4)
+            self.deleted = 0
+
+        def CreateDIBSection(self, _hdc, _bmi, _usage, bits_ptr_ref, _section, _offset):
+            bits_ptr_ref._obj.value = ctypes.addressof(self.dib_buf)
+            return 0x2001
+
+        def CreateBitmap(self, _w, _h, _planes, _bpp, _bits):
+            return 0x2002
+
+        def DeleteObject(self, _obj):
+            self.deleted += 1
+            return 1
+
+    class MockUser32:
+        def __init__(self) -> None:
+            self.msg_q: _q.Queue[tuple[int, int, int, int] | None] = _q.Queue()
+            self.wndproc = None
+            self.menu_items: list[tuple[int, str | None]] = []
+            self.next_menu = 0x5000
+            self.next_icon = 0x7000
+            self.destroyed_icons: list[int] = []
+            self.post_count = 0
+            self.chosen_cmd = 102  # Second profile item ("Shooter")
+
+        def RegisterWindowMessageW(self, _msg):
+            return 0xC099
+
+        def RegisterClassExW(self, wc_ptr):
+            self.wndproc = wc_ptr._obj.lpfnWndProc
+            return 1
+
+        def UnregisterClassW(self, _cls, _hinst):
+            return 1
+
+        def CreateWindowExW(self, *_args):
+            return 0x00007FF600112233
+
+        def DestroyWindow(self, _hwnd):
+            return 1
+
+        def GetMessageW(self, msg_ptr, _hwnd, _min, _max):
+            item = self.msg_q.get(timeout=2.0)
+            if item is None:
+                return 0
+            hwnd, m, wp, lp = item
+            msg_ptr._obj.hwnd = hwnd
+            msg_ptr._obj.message = m
+            msg_ptr._obj.wParam = wp
+            msg_ptr._obj.lParam = lp
+            return 1
+
+        def TranslateMessage(self, _msg_ptr):
+            return 1
+
+        def DispatchMessageW(self, msg_ptr):
+            if self.wndproc is not None:
+                m = msg_ptr._obj
+                return self.wndproc(m.hwnd, m.message, m.wParam, m.lParam)
+            return 0
+
+        def PostQuitMessage(self, _code):
+            self.msg_q.put(None)
+
+        def PostMessageW(self, hwnd, msg, wp, lp):
+            self.post_count += 1
+            self.msg_q.put((int(hwnd or 0), int(msg), int(wp), int(lp)))
+            return 1
+
+        def GetDC(self, _hwnd):
+            return 0x3001
+
+        def ReleaseDC(self, _hwnd, _hdc):
+            return 1
+
+        def CreateIconIndirect(self, _info):
+            self.next_icon += 1
+            return self.next_icon
+
+        def LoadIconW(self, _hinst, _res):
+            return 0x7999
+
+        def DestroyIcon(self, hicon):
+            self.destroyed_icons.append(int(hicon))
+            return 1
+
+        def CreatePopupMenu(self):
+            self.next_menu += 1
+            return self.next_menu
+
+        def AppendMenuW(self, _hmenu, _flags, uid, label):
+            self.menu_items.append((int(uid), label))
+            return 1
+
+        def SetMenuDefaultItem(self, _hmenu, _uid, _bypos):
+            return 1
+
+        def GetCursorPos(self, pt_ref):
+            pt_ref._obj.x = 400
+            pt_ref._obj.y = 700
+            return 1
+
+        def SetForegroundWindow(self, _hwnd):
+            return 1
+
+        def TrackPopupMenu(self, *_args):
+            return self.chosen_cmd
+
+        def DestroyMenu(self, _hmenu):
+            return 1
+
+        def DefWindowProcW(self, _hwnd, _msg, _wp, _lp):
+            return 0
+
+    class MockShell32:
+        def __init__(self) -> None:
+            self.ops: list[int] = []
+
+        def Shell_NotifyIconW(self, msg, _nid_ref):
+            self.ops.append(int(msg))
+            return 1
+
+    class MockWin32:
+        def __init__(self) -> None:
+            self.kernel32 = MockKernel32()
+            self.gdi32 = MockGdi32()
+            self.user32 = MockUser32()
+            self.shell32 = MockShell32()
+
+    mock_win32 = MockWin32()
+    win_tray = SystemTrayIcon(initial_snapshot=snap, win32_api=mock_win32)
+    assert win_tray.start((36, 148, 172)) is True
+    assert win_tray.available is True
+
+    # Identical tooltip should NOT wake the tray thread on subsequent calls
+    win_tray.set_snapshot(snap)
+    posts_after_first = mock_win32.user32.post_count
+    win_tray.set_snapshot(snap)
+    assert mock_win32.user32.post_count == posts_after_first
+
+    # Simulate left-click & right-click on tray icon from Explorer
+    mock_win32.user32.PostMessageW(win_tray._hwnd, WM_TRAY_CALLBACK, 0, WM_LBUTTONUP)
+    mock_win32.user32.PostMessageW(win_tray._hwnd, WM_TRAY_CALLBACK, 0, WM_RBUTTONUP)
+    mock_win32.user32.PostMessageW(win_tray._hwnd, 0xC099, 0, 0)  # TaskbarCreated
+    win_tray.show_balloon("OpenDS4", "Minimized to tray")
+
+    # Wait briefly for dedicated tray thread to process messages into SimpleQueue
+    deadline = time.monotonic() + 1.0
+    collected: list[str] = []
+    while len(collected) < 2 and time.monotonic() < deadline:
+        act = win_tray.pop_action()
+        if act is not None:
+            collected.append(act)
+        else:
+            time.sleep(0.01)
+
+    win_tray.stop()
+    assert win_tray.available is False
+    assert collected == ["restore", "profile:Shooter"]
+    assert len(mock_win32.user32.destroyed_icons) == 1
 
     # Profile persistence for minimize_to_tray
     store = ProfileStore(tmp_path / "tray_profiles")
@@ -414,16 +618,13 @@ def test_tray_icon_menu_and_launcher_script(tmp_path: Path) -> None:
     store.save(p)
     assert store.load("TrayPref").minimize_to_tray is False
 
-    # Safe lifecycle on non-Windows / headless environments
-    tray = SystemTrayIcon(get_snapshot=lambda: snap, on_action=lambda _a: None, schedule_ui=lambda fn: fn())
-    tray.update_state("OpenDS4", (0, 120, 255))
-    tray.stop()
+    # Verify --self-test CLI mode and CRLF batch launcher
+    assert opends4_app.main(["--self-test"]) == 0
 
-    # Verify batch launcher checks imports on every start and uses CRLF line endings
     bat_bytes = (PROJECT_ROOT / "run_windows.bat").read_bytes()
     assert b"\r\n" in bat_bytes
-    assert b"import hid, vgamepad" in bat_bytes
-    assert b"requirements.txt" in bat_bytes
+    assert b"find_spec('hid')" in bat_bytes
+    assert b"--self-test" in bat_bytes
     assert (PROJECT_ROOT / "LICENSE").is_file()
 
 
