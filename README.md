@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="assets/logo.svg" alt="OpenDS4 logo" width="108" height="108">
+<img src="assets/logo.png" alt="OpenDS4 logo" width="128" height="128">
 
 # OpenDS4
 
