@@ -56,7 +56,7 @@ The app reads HID reports from the controller, maps them through your profile, a
 ## Requirements
 
 - Windows 10 or 11
-- Python 3.10 or newer, with Tcl/Tk included
+- Python 3.10 or newer
 - [ViGEmBus](https://github.com/nefarius/ViGEmBus/releases) (the virtual controller driver)
 - A DualShock 4, connected by USB or paired over Bluetooth
 - Optional: [HidHide](https://github.com/nefarius/HidHide/releases), if a game reads both the physical and virtual controller
